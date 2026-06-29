@@ -4,6 +4,7 @@ from typing import List
 
 from od_platform.common.logging_utils import get_logger
 from od_platform.common.paths import LOGGING_DIR, RAW_DATA_DIR, ROOT_DIR, get_dirs_to_initialize
+from od_platform.common.string_utils import format_table_row, format_table_separator
 
 logger = logging.getLogger("od_platform.cli.init_project")
 
@@ -34,7 +35,8 @@ def initialize_project() -> None:
     """初始化 ODPlatform 项目运行时目录。"""
     get_logger(base_path=LOGGING_DIR, log_type="init_project")
 
-    logger.info("开始初始化项目核心目录")
+    line_width = 60
+    logger.info("开始初始化项目核心目录".center(line_width, "="))
     logger.info("项目根目录: %s", ROOT_DIR)
 
     created: List[Path] = []
@@ -57,6 +59,16 @@ def initialize_project() -> None:
 
     _check_raw_data_status()
 
+    logger.info("初始化汇总".center(line_width, "="))
+    widths = [25, 10]
+    aligns = ["left", "center"]
+    logger.info(format_table_row(["目录", "状态"], widths, aligns))
+    logger.info(format_table_separator(widths))
+    for directory in created:
+        logger.info(format_table_row([_format_relative(directory), "新创建"], widths, aligns))
+    for directory in existed:
+        logger.info(format_table_row([_format_relative(directory), "已存在"], widths, aligns))
+    logger.info(format_table_separator(widths))
     logger.info(
         "初始化完成: 新建了 %d 个目录，已经存在了 %d 个目录",
         len(created),
