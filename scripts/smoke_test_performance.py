@@ -1,4 +1,5 @@
 """性能模块烟雾测试 —— 验证 @time_it 装饰器各项功能。"""
+import logging
 import sys
 import time
 from pathlib import Path
@@ -9,6 +10,7 @@ sys.path.insert(0, str(REPO_ROOT / "apps" / "platform" / "src"))
 from od_platform.common.performance_utils import time_it, _format_duration
 
 SEP = "=" * 60
+logging.basicConfig(level=logging.INFO, format="%(message)s")
 
 # 1. 时间格式化边界值
 print(SEP)

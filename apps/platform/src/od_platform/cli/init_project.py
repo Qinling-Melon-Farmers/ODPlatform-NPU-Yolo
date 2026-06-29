@@ -4,7 +4,9 @@ from typing import List
 
 from od_platform.common.logging_utils import get_logger
 from od_platform.common.paths import LOGGING_DIR, RAW_DATA_DIR, ROOT_DIR, get_dirs_to_initialize
+from od_platform.common.performance_utils import time_it
 from od_platform.common.string_utils import format_table_row, format_table_separator
+from od_platform.common.system_utils import log_device_info
 
 logger = logging.getLogger("od_platform.cli.init_project")
 
@@ -31,6 +33,7 @@ def _check_raw_data_status() -> None:
     logger.info("发现原始数据集目录: %s", names)
 
 
+@time_it(iterations=1, name="项目初始化", logger_instance=logger)
 def initialize_project() -> None:
     """初始化 ODPlatform 项目运行时目录。"""
     get_logger(base_path=LOGGING_DIR, log_type="init_project")
@@ -38,6 +41,7 @@ def initialize_project() -> None:
     line_width = 60
     logger.info("开始初始化项目核心目录".center(line_width, "="))
     logger.info("项目根目录: %s", ROOT_DIR)
+    log_device_info(logger=logger)
 
     created: List[Path] = []
     existed: List[Path] = []

@@ -49,13 +49,15 @@ def _format_duration(seconds: float) -> str:
     if seconds < 60.0:
         return f"{seconds:.2f} s"
     if seconds < 3600.0:
-        minutes = int(seconds // 60)
-        secs = seconds % 60
+        rounded = round(seconds, 2)
+        minutes = int(rounded // 60)
+        secs = rounded - minutes * 60
         return f"{minutes} 分 {secs:.2f} 秒"
-    hours = int(seconds // 3600)
-    remaining = seconds % 3600
+    rounded = round(seconds, 2)
+    hours = int(rounded // 3600)
+    remaining = rounded - hours * 3600
     minutes = int(remaining // 60)
-    secs = remaining % 60
+    secs = remaining - minutes * 60
     return f"{hours} 时 {minutes} 分 {secs:.2f} 秒"
 
 
