@@ -1,0 +1,41 @@
+# ODPlatform Monorepo 仓库根配置。
+# 本文件只放全仓共享工具配置，不描述 Python 包，也不声明业务依赖。
+
+[tool.ruff]
+line-length = 100
+target-version = "py310"
+src = [
+    "apps/platform/src",
+]
+
+[tool.ruff.lint]
+select = ["E", "W", "F", "I", "B", "C4", "UP"]
+ignore = ["E501"]
+
+[tool.ruff.lint.isort]
+known-first-party = ["od_platform"]
+
+[tool.mypy]
+python_version = "3.10"
+warn_return_any = true
+warn_unused_ignores = true
+no_implicit_optional = true
+
+[[tool.mypy.overrides]]
+module = ["colorlog.*", "psutil.*", "ultralytics.*", "torch.*", "torchvision.*"]
+ignore_missing_imports = true
+
+[tool.pytest.ini_options]
+minversion = "7.0"
+testpaths = [
+    "apps/platform/src/od_platform/tests",
+    "apps/platform/tests",
+    "tests",
+]
+python_files = ["test_*.py"]
+addopts = ["-v", "--strict-markers", "--tb=short"]
+markers = [
+    "unit: 单元测试（快、无 IO）",
+    "integration: 集成测试（有 IO）",
+    "slow: 慢测试（> 1s）",
+]
