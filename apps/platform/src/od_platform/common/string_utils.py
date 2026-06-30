@@ -44,7 +44,10 @@ def format_table_row(columns: list, widths: list, aligns: list | None = None) ->
         aligns = ["left"] * len(columns)
     assert len(columns) == len(widths) == len(aligns), "列数 / 宽度 / 对齐数必须一致"
 
-    parts = [pad_to_width(str(col), width, align) for col, width, align in zip(columns, widths, aligns)]
+    parts = [
+        pad_to_width(str(col), width, align)
+        for col, width, align in zip(columns, widths, aligns, strict=True)
+    ]
     return " | ".join(parts)
 
 

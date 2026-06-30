@@ -1,4 +1,6 @@
 """性能模块烟雾测试 —— 验证 @time_it 装饰器各项功能。"""
+# ruff: noqa: E402, I001
+
 import logging
 import sys
 import time
@@ -7,7 +9,7 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO_ROOT / "apps" / "platform" / "src"))
 
-from od_platform.common.performance_utils import time_it, _format_duration
+from od_platform.common.performance_utils import _format_duration, time_it
 
 SEP = "=" * 60
 logging.basicConfig(level=logging.INFO, format="%(message)s")
@@ -62,7 +64,7 @@ print(SEP)
 
 @time_it(iterations=1, name="返回字典")
 def returns_dict():
-    return dict(status="ok", count=42)
+    return {"status": "ok", "count": 42}
 
 result = returns_dict()
 assert result["status"] == "ok"
@@ -75,7 +77,7 @@ def raises_error():
 
 try:
     raises_error()
-    assert False, "应该抛异常但没抛"
+    raise AssertionError("应该抛异常但没抛")
 except ValueError as e:
     print(f"  异常不吞: OK (捕获到: {e})")
 

@@ -9,7 +9,8 @@
 import functools
 import logging
 import time
-from typing import Any, Callable, Optional
+from collections.abc import Callable
+from typing import Any
 
 _logger = logging.getLogger("od_platform.common.performance")
 
@@ -63,8 +64,8 @@ def _format_duration(seconds: float) -> str:
 
 def time_it(
     iterations: int = 1,
-    name: Optional[str] = None,
-    logger_instance: Optional[logging.Logger] = None,
+    name: str | None = None,
+    logger_instance: logging.Logger | None = None,
 ) -> Callable:
     """通用计时装饰器工厂。
 

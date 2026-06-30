@@ -1,6 +1,5 @@
 import logging
 from pathlib import Path
-from typing import List
 
 from od_platform.common.logging_utils import get_logger
 from od_platform.common.paths import LOGGING_DIR, RAW_DATA_DIR, ROOT_DIR, get_dirs_to_initialize
@@ -43,8 +42,8 @@ def initialize_project() -> None:
     logger.info("项目根目录: %s", ROOT_DIR)
     log_device_info(logger=logger)
 
-    created: List[Path] = []
-    existed: List[Path] = []
+    created: list[Path] = []
+    existed: list[Path] = []
 
     for directory in get_dirs_to_initialize():
         relative_path = _format_relative(directory)

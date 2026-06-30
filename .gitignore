@@ -51,13 +51,18 @@ htmlcov/
 # 数据集不进 git(走外部存储或 Git LFS)
 data/raw/
 data/processed/
+data/train/
+data/val/
+data/test/
 !data/README.md
 !data/.gitkeep
 
 # 模型权重不进 git
+models/checkpoints/*
 models/pretrained/*.pt
 models/trained/*.pt
 models/trained/*/
+!models/checkpoints/README.md
 !models/pretrained/README.md
 !models/trained/README.md
 
@@ -67,6 +72,7 @@ runs/*
 
 # 端私有日志(运行时产生,各机器不同)
 apps/platform/logging/
+apps/platform/meta_logging/
 *.log
 apps/platform/configs/
 *.yaml

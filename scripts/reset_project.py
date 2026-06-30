@@ -8,8 +8,8 @@ PLATFORM_SRC = REPO_ROOT / "apps" / "platform" / "src"
 
 sys.path.insert(0, str(PLATFORM_SRC))
 
-from od_platform.cli.init_project import initialize_project
+from od_platform.cli.reset_project import main
 
 
 if __name__ == "__main__":
-    initialize_project()
+    sys.exit(main())

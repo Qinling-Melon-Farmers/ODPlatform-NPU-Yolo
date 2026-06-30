@@ -11,7 +11,6 @@ import os
 import platform
 import socket
 from datetime import datetime
-from typing import Optional
 
 _logger = logging.getLogger("od_platform.common.system")
 
@@ -134,7 +133,7 @@ def get_basic_device_info() -> dict:
     return info
 
 
-def log_device_info(logger: Optional[logging.Logger] = None) -> dict:
+def log_device_info(logger: logging.Logger | None = None) -> dict:
     """采集环境信息并以格式化表格输出到日志。
 
     各类别使用居中标题分隔，中英文键名通过

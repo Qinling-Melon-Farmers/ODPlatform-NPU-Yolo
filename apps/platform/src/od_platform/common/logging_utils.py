@@ -3,7 +3,6 @@ import platform
 import sys
 from datetime import datetime
 from pathlib import Path
-from typing import Optional
 
 from colorlog import ColoredFormatter
 
@@ -13,7 +12,7 @@ ROOT_LOGGER_NAME: str = "od_platform"
 def get_logger(
     base_path: Path,
     log_type: str = "general",
-    model_name: Optional[str] = None,
+    model_name: str | None = None,
     log_level: int = logging.INFO,
     temp_log: bool = False,
     encoding: str = "utf-8",
@@ -65,6 +64,11 @@ def get_logger(
         },
         style="%",
     )
+    if hasattr(sys.stdout, "reconfigure"):
+        try:
+            sys.stdout.reconfigure(encoding=encoding, errors="replace")
+        except OSError:
+            pass
     console_handler = logging.StreamHandler(sys.stdout)
     console_handler.setLevel(log_level)
     console_handler.setFormatter(console_formatter)
