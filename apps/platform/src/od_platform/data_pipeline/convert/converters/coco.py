@@ -17,12 +17,12 @@ from od_platform.data_pipeline.convert.registry import ConvertOptions, register
 logger = logging.getLogger(__name__)
 
 
-def _find_coco_json(input_path: Path) -> Path:
-    if input_path.is_file():
-        return input_path
-    json_files = sorted(input_path.glob("*.json"))
+def _find_coco_json(input_dir: Path) -> Path:
+    if input_dir.is_file():
+        return input_dir
+    json_files = sorted(input_dir.glob("*.json"))
     if len(json_files) != 1:
-        raise FileNotFoundError(f"{input_path} 下需要恰好 1 个 COCO JSON，实际找到 {len(json_files)} 个")
+        raise FileNotFoundError(f"{input_dir} 下需要恰好 1 个 COCO JSON，实际找到 {len(json_files)} 个")
     return json_files[0]
 
 
@@ -60,18 +60,18 @@ def _format_yolo_line(
 
 
 @register(AnnotationFormat.COCO, supported_tasks=(Task.DETECT,))
-def convert_coco(input_path: Path, output_labels_dir: Path, options: ConvertOptions) -> list[str]:
+def convert_coco(input_dir: Path, output_labels_dir: Path, options: ConvertOptions) -> list[str]:
     """将 COCO detection JSON 转换为 YOLO label 目录。
 
     Args:
-        input_path: COCO JSON 文件，或仅包含一个 JSON 的目录。
+        input_dir: COCO JSON 文件，或仅包含一个 JSON 的目录。
         output_labels_dir: YOLO label 输出目录。
         options: 转换选项。``classes`` 为空时按 COCO category id 升序生成类别表。
 
     Returns:
         转换过程中使用的类别列表。
     """
-    coco_json = _find_coco_json(input_path)
+    coco_json = _find_coco_json(input_dir)
     data = json.loads(coco_json.read_text(encoding="utf-8"))
     images = data.get("images", [])
     annotations = data.get("annotations", [])

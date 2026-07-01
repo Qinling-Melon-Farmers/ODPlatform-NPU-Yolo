@@ -26,20 +26,20 @@ def _class_id(name: str, classes: list[str], discovering: bool) -> int | None:
 
 
 @register(AnnotationFormat.PASCAL_VOC, supported_tasks=(Task.DETECT,))
-def convert_voc(input_path: Path, output_labels_dir: Path, options: ConvertOptions) -> list[str]:
+def convert_voc(input_dir: Path, output_labels_dir: Path, options: ConvertOptions) -> list[str]:
     """将 Pascal VOC XML 目录转换为 YOLO label 目录。
 
     Args:
-        input_path: XML 标注目录。
+        input_dir: XML 标注目录。
         output_labels_dir: YOLO label 输出目录。
         options: 转换选项。
 
     Returns:
         转换过程中使用的类别列表。
     """
-    xml_files = sorted(input_path.glob("*.xml"))
+    xml_files = sorted(input_dir.glob("*.xml"))
     if not xml_files:
-        raise FileNotFoundError(f"在 {input_path} 下未找到任何 XML")
+        raise FileNotFoundError(f"在 {input_dir} 下未找到任何 XML")
 
     output_labels_dir.mkdir(parents=True, exist_ok=True)
     classes = list(options.classes) if options.classes else []

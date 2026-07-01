@@ -48,7 +48,7 @@ class TestDataPipelineConvert(unittest.TestCase):
             )
 
             classes = convert_data_to_yolo(
-                input_path=coco_path,
+                input_dir=coco_path,
                 output_labels_dir=output_dir,
                 annotation_format=AnnotationFormat.COCO,
                 options=ConvertOptions(task=Task.DETECT),
@@ -70,7 +70,7 @@ class TestDataPipelineConvert(unittest.TestCase):
             (input_dir / "image_1.txt").write_text("1 0.5 0.25 0.2 0.1\n", encoding="utf-8")
 
             classes = convert_data_to_yolo(
-                input_path=input_dir,
+                input_dir=input_dir,
                 output_labels_dir=output_dir,
                 annotation_format=AnnotationFormat.YOLO,
                 options=ConvertOptions(task=Task.DETECT, classes=["ship", "aircraft"]),
@@ -92,7 +92,7 @@ class TestDataPipelineConvert(unittest.TestCase):
 
             with self.assertRaises(ValueError):
                 convert_data_to_yolo(
-                    input_path=input_dir,
+                    input_dir=input_dir,
                     output_labels_dir=output_dir,
                     annotation_format=AnnotationFormat.YOLO,
                     options=ConvertOptions(task=Task.DETECT),
@@ -107,7 +107,7 @@ class TestDataPipelineConvert(unittest.TestCase):
 
             with self.assertRaises(ValueError):
                 convert_data_to_yolo(
-                    input_path=input_dir,
+                    input_dir=input_dir,
                     output_labels_dir=root / "out",
                     annotation_format=AnnotationFormat.YOLO,
                     options=ConvertOptions(task=Task.SEGMENT),

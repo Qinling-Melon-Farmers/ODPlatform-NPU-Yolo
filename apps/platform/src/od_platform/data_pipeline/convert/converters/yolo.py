@@ -52,20 +52,20 @@ def _validate_label(label_path: Path, max_class_id: int | None) -> tuple[list[st
 
 
 @register(AnnotationFormat.YOLO, supported_tasks=(Task.DETECT,))
-def convert_yolo(input_path: Path, output_labels_dir: Path, options: ConvertOptions) -> list[str]:
+def convert_yolo(input_dir: Path, output_labels_dir: Path, options: ConvertOptions) -> list[str]:
     """验证 YOLO label 目录，并输出规范化后的 label 文件。
 
     Args:
-        input_path: YOLO txt label 目录。
+        input_dir: YOLO txt label 目录。
         output_labels_dir: 验证后 label 输出目录。与输入目录相同时只做校验。
         options: 转换选项。提供 ``classes`` 时会校验 class id 不越界。
 
     Returns:
         类别列表；未提供类别名时返回发现到的 class id 字符串列表。
     """
-    label_files = sorted(input_path.glob("*.txt"))
+    label_files = sorted(input_dir.glob("*.txt"))
     if not label_files:
-        raise FileNotFoundError(f"在 {input_path} 下未找到任何 YOLO txt label")
+        raise FileNotFoundError(f"在 {input_dir} 下未找到任何 YOLO txt label")
 
     output_labels_dir.mkdir(parents=True, exist_ok=True)
     max_class_id = len(options.classes) - 1 if options.classes is not None else None

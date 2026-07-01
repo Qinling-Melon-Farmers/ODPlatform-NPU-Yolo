@@ -14,7 +14,7 @@ from od_platform.data_pipeline.convert.registry import ConvertOptions, get_conve
 
 
 def convert_data_to_yolo(
-    input_path: Path,
+    input_dir: Path,
     output_labels_dir: Path,
     annotation_format: str,
     options: ConvertOptions,
@@ -22,7 +22,7 @@ def convert_data_to_yolo(
     """将指定标注格式转换为 YOLO label 目录。
 
     Args:
-        input_path: 输入标注路径，可以是目录或具体文件，取决于格式转换器。
+        input_dir: 输入标注路径，可以是目录或具体文件，取决于格式转换器。
         output_labels_dir: 输出 YOLO labels 目录。
         annotation_format: 输入标注格式名称。
         options: 转换选项。
@@ -36,7 +36,7 @@ def convert_data_to_yolo(
     entry = get_converter(annotation_format)
     if not entry.supports(options.task):
         raise ValueError(
-            f"格式 {annotation_format!r} 不支持任务 {options.task!r}, "
-            f"支持任务: {entry.supported_tasks}"
+            f"格式 {annotation_format!r} 不支持 task={options.task!r}。"
+            f"支持: {entry.supported_tasks}"
         )
-    return entry.func(input_path, output_labels_dir, options)
+    return entry.func(input_dir, output_labels_dir, options)
