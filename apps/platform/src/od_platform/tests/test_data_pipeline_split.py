@@ -18,28 +18,19 @@ class TestDataPipelineSplit(unittest.TestCase):
         label.write_text("0 0.500000 0.500000 0.100000 0.100000\n", encoding="utf-8")
         return image, label
 
-    def test_split_registry_lists_random_strategy(self) -> None:
-        strategies = list_strategies()
-
-        self.assertIn(SplitStrategy.RANDOM, strategies)
-
     def test_split_registry_lists_all_strategies(self) -> None:
-        """验证 RANDOM / STRATIFIED / STRATIFIED_MULTILABEL 均已注册。"""
         strategies = list_strategies()
 
         self.assertIn(SplitStrategy.RANDOM, strategies)
         self.assertIn(SplitStrategy.STRATIFIED, strategies)
         self.assertIn(SplitStrategy.STRATIFIED_MULTILABEL, strategies)
-        self.assertIn("随机", strategies[SplitStrategy.RANDOM])
 
-    def test_stratified_raises_not_implemented(self) -> None:
-        """分层策略目前为骨架，调用时抛出 NotImplementedError。"""
-        with self.assertRaises(NotImplementedError):
+    def test_stratified_requires_labels(self) -> None:
+        with self.assertRaises(ValueError):
             split_pairs([], SplitStrategy.STRATIFIED)
 
-    def test_stratified_multilabel_raises_not_implemented(self) -> None:
-        """多标签分层策略目前为骨架，调用时抛出 NotImplementedError。"""
-        with self.assertRaises(NotImplementedError):
+    def test_stratified_multilabel_requires_labels(self) -> None:
+        with self.assertRaises(ValueError):
             split_pairs([], SplitStrategy.STRATIFIED_MULTILABEL)
 
     def test_collect_yolo_pairs_requires_matching_labels(self) -> None:
@@ -67,6 +58,38 @@ class TestDataPipelineSplit(unittest.TestCase):
             self.assertEqual(manifest_a.all_pairs(), manifest_b.all_pairs())
             self.assertEqual(manifest_a.random_state, 42)
             self.assertEqual(manifest_a.strategy, SplitStrategy.RANDOM)
+
+    def test_random_split_accepts_float_epsilon_for_70_30(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            pairs = [self._make_yolo_sample(root, index) for index in range(10)]
+
+            manifest = split_pairs(
+                pairs,
+                SplitStrategy.RANDOM,
+                SplitOptions(train_rate=0.7, val_rate=0.3, test_rate=None, random_state=42),
+            )
+
+            self.assertEqual(manifest.summary(), {"train": 7, "val": 3, "test": 0, "total": 10})
+            self.assertEqual(manifest.test_rate, 0.0)
+
+    def test_stratified_split_uses_labels(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            pairs = [self._make_yolo_sample(root, index) for index in range(6)]
+            labels = {f"sample_{index:03d}": ["a" if index < 3 else "b"] for index in range(6)}
+
+            manifest = split_pairs(
+                pairs,
+                strategy=SplitStrategy.STRATIFIED,
+                train_rate=0.5,
+                val_rate=0.25,
+                random_state=42,
+                labels_per_image=labels,
+            )
+
+            self.assertEqual(manifest.summary()["total"], 6)
+            self.assertEqual(manifest.strategy, SplitStrategy.STRATIFIED)
 
     def test_random_split_rejects_invalid_rates(self) -> None:
         with self.assertRaises(ValueError):

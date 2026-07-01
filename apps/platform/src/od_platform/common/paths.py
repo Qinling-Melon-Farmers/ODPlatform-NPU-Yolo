@@ -41,6 +41,7 @@ VAL_DIR: Path = DATA_DIR / "val"
 TEST_DIR: Path = DATA_DIR / "test"
 
 CONFIGS_DIR: Path = APP_DIR / "configs"
+DATASET_CONFIGS_DIR: Path = CONFIGS_DIR / "datasets"
 LOGGING_DIR: Path = APP_DIR / "logging"
 META_LOGGING_DIR: Path = APP_DIR / "meta_logging"
 UNIT_TEST_DIR: Path = APP_DIR / "tests"
@@ -75,6 +76,7 @@ def get_dirs_to_initialize() -> list[Path]:
         RAW_DATA_DIR,
         PROCESSED_DATA_DIR,
         CONFIGS_DIR,
+        DATASET_CONFIGS_DIR,
         LOGGING_DIR,
         UNIT_TEST_DIR,
         DOCS_DIR,
@@ -134,6 +136,16 @@ def is_protected(path: Path) -> bool:
         return True
 
     return False
+
+
+def dataset_processed_dir(name: str) -> Path:
+    """Return the processed dataset root for one dataset name."""
+    return PROCESSED_DATA_DIR / name
+
+
+def dataset_yaml_path(name: str) -> Path:
+    """Return the generated Ultralytics yaml path for one dataset name."""
+    return DATASET_CONFIGS_DIR / f"{name}.yaml"
 
 
 if __name__ == "__main__":

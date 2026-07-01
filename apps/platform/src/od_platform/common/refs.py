@@ -1,0 +1,26 @@
+"""Resolve user-facing resource references into filesystem paths."""
+
+from __future__ import annotations
+
+from pathlib import Path
+
+from od_platform.common import paths
+
+
+def resolve_ref(ref: str, *, base_dir: Path, default_suffix: str | None = None) -> Path:
+    """Resolve a name or path into an absolute path.
+
+    A plain name is resolved below ``base_dir``. A path-like value, such as
+    ``foo/bar`` or an absolute path, is resolved as provided.
+    """
+    path = Path(ref)
+    if path.is_absolute() or len(path.parts) > 1:
+        return path.resolve()
+
+    name = ref if default_suffix is None or ref.endswith(default_suffix) else ref + default_suffix
+    return (base_dir / name).resolve()
+
+
+def resolve_dataset(ref: str) -> Path:
+    """Resolve a dataset name or path into a raw dataset root."""
+    return resolve_ref(ref, base_dir=paths.RAW_DATA_DIR)

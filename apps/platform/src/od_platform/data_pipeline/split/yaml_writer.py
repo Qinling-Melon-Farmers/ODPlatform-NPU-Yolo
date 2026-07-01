@@ -1,53 +1,89 @@
-"""YOLO dataset.yaml 生成工具。
-
-@FileName:   yaml_writer.py
-@Function:   根据划分结果生成 ultralytics 可直接消费的 dataset.yaml
-"""
+"""Generate Ultralytics-compatible dataset yaml files."""
 
 from __future__ import annotations
 
 import logging
 from pathlib import Path
 
+from od_platform.common.constants import Task
+from od_platform.data_pipeline.split.manifest import SplitManifest
 from od_platform.data_pipeline.split.materializer import SplitOutputDirs
 
 logger = logging.getLogger(__name__)
 
+_SCHEMA_VERSION = 1
+
+
+def _scalar(value: object) -> str:
+    text = str(value)
+    if not text or any(char in text for char in ["#", "[", "]", "{", "}"]) or ": " in text:
+        return repr(text)
+    return text
+
 
 def write_dataset_yaml(
+    yaml_path: Path | None = None,
+    *,
     dataset_root: Path,
     classes: list[str],
-    dirs: SplitOutputDirs,
+    dirs: SplitOutputDirs | None = None,
     output_path: Path | None = None,
+    manifest: SplitManifest | None = None,
+    dataset_name: str | None = None,
+    source_format: str | None = None,
+    task: str = Task.DETECT,
 ) -> Path:
-    """生成 ultralytics 兼容的 dataset.yaml。
-
-    Args:
-        dataset_root: 数据集根目录（绝对路径，写入 yaml 的 ``path`` 字段）。
-        classes: 类别名称列表，下标即 class_id。
-        dirs: 划分输出目录集合，从中读取 train/val/test 相对路径。
-        output_path: yaml 输出路径，默认 ``dataset_root / "dataset.yaml"``。
-
-    Returns:
-        写入的 yaml 文件路径。
-    """
-    rel_paths = dirs.yaml_rel_paths()
-    output = output_path or dataset_root / "dataset.yaml"
+    """Write a dataset yaml file and return its path."""
+    output = yaml_path or output_path or dataset_root / "dataset.yaml"
     output.parent.mkdir(parents=True, exist_ok=True)
 
-    lines: list[str] = []
-    lines.append(f"# ODPlatform auto-generated dataset config")
-    lines.append(f"path: {dataset_root}")
-    lines.append("")
-    lines.append(f"train: {rel_paths['train']}")
-    lines.append(f"val: {rel_paths['val']}")
-    lines.append(f"test: {rel_paths['test']}")
-    lines.append("")
-    lines.append(f"nc: {len(classes)}")
-    lines.append("names:")
+    resolved_dirs = dirs or SplitOutputDirs.for_dataset_root(dataset_root)
+    rel_paths = resolved_dirs.yaml_rel_paths()
+
+    lines: list[str] = [
+        "# ODPlatform auto-generated dataset config",
+        f"path: {_scalar(dataset_root)}",
+        "",
+        f"train: {_scalar(rel_paths['train'])}",
+        f"val: {_scalar(rel_paths['val'])}",
+        f"test: {_scalar(rel_paths['test'])}",
+        "",
+        f"nc: {len(classes)}",
+        "names:",
+    ]
     for idx, name in enumerate(classes):
-        lines.append(f"  {idx}: {name}")
+        lines.append(f"  {idx}: {_scalar(name)}")
+
+    if manifest is not None or dataset_name is not None or source_format is not None:
+        lines.extend(
+            [
+                "",
+                "odp_meta:",
+                f"  schema_version: {_SCHEMA_VERSION}",
+                f"  dataset_name: {_scalar(dataset_name or dataset_root.name)}",
+                f"  source_format: {_scalar(source_format or 'unknown')}",
+                f"  task: {_scalar(task)}",
+            ]
+        )
+        if manifest is not None:
+            counts = manifest.summary()
+            lines.extend(
+                [
+                    "  split:",
+                    f"    strategy: {_scalar(manifest.strategy)}",
+                    f"    random_state: {manifest.random_state}",
+                    "    rates:",
+                    f"      train: {manifest.train_rate:.6g}",
+                    f"      val: {manifest.val_rate:.6g}",
+                    f"      test: {manifest.test_rate:.6g}",
+                    "    counts:",
+                    f"      train: {counts['train']}",
+                    f"      val: {counts['val']}",
+                    f"      test: {counts['test']}",
+                    f"      total: {counts['total']}",
+                ]
+            )
 
     output.write_text("\n".join(lines) + "\n", encoding="utf-8")
-    logger.info("dataset.yaml 已写入: %s（%d 个类别）", output, len(classes))
+    logger.info("dataset yaml written: %s", output)
     return output

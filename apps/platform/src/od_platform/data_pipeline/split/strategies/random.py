@@ -1,48 +1,30 @@
-"""随机数据集划分策略。
-
-@FileName:   random.py
-@Function:   按固定随机种子随机划分 train/val/test
-"""
+"""Random train/val/test split strategy."""
 
 from __future__ import annotations
 
 import random
 
-from od_platform.common.constants import RATE_EPSILON, SplitStrategy
+from od_platform.common.constants import SplitStrategy
 from od_platform.data_pipeline.split.manifest import PairList, SplitManifest
 from od_platform.data_pipeline.split.registry import SplitOptions, register
+from od_platform.data_pipeline.split.strategies._common import (
+    seeded_shuffle,
+    three_way_counts,
+    validate_rates,
+)
 
 
-def _validate_rates(options: SplitOptions) -> None:
-    """校验划分比例：不可为负数（容差 RATE_EPSILON），之和必须为 1.0。"""
-    rates = (options.train_rate, options.val_rate, options.test_rate)
-    if any(rate < -RATE_EPSILON for rate in rates):
-        raise ValueError(f"划分比例不能为负数: {rates}")
-    if abs(sum(rates) - 1.0) > RATE_EPSILON:
-        raise ValueError(f"划分比例之和必须为 1.0，实际为 {sum(rates):.6f}")
-
-
-@register(SplitStrategy.RANDOM, description="按固定随机种子随机划分 train/val/test")
+@register(SplitStrategy.RANDOM, description="随机划分 train/val/test")
 def split_random(pairs: PairList, options: SplitOptions) -> SplitManifest:
-    """按固定随机种子随机划分样本。
+    """Split samples randomly with a fixed seed."""
+    test_rate = validate_rates(options.train_rate, options.val_rate, options.test_rate)
+    rng = random.Random(options.random_state)
+    shuffled = seeded_shuffle(sorted(pairs, key=lambda pair: pair[0].stem), rng)
 
-    Args:
-        pairs: ``(image_path, label_path)`` 样本对列表。
-        options: 划分参数。
-
-    Returns:
-        可复现的划分结果。
-    """
-    _validate_rates(options)
-    shuffled = list(pairs)
-    random.Random(options.random_state).shuffle(shuffled)
-
-    total = len(shuffled)
-    train_count = int(total * options.train_rate)
-    val_count = int(total * options.val_rate)
-    train = shuffled[:train_count]
-    val = shuffled[train_count : train_count + val_count]
-    test = shuffled[train_count + val_count :]
+    n_train, n_val, _ = three_way_counts(len(shuffled), options.train_rate, options.val_rate)
+    train = shuffled[:n_train]
+    val = shuffled[n_train : n_train + n_val]
+    test = shuffled[n_train + n_val :]
 
     return SplitManifest(
         train=train,
@@ -50,7 +32,7 @@ def split_random(pairs: PairList, options: SplitOptions) -> SplitManifest:
         test=test,
         train_rate=options.train_rate,
         val_rate=options.val_rate,
-        test_rate=options.test_rate,
+        test_rate=test_rate,
         random_state=options.random_state,
         strategy=SplitStrategy.RANDOM,
     )
