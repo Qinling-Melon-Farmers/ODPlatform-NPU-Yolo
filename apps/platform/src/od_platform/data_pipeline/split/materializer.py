@@ -51,6 +51,19 @@ class SplitOutputDirs:
             self.test_labels,
         )
 
+    def yaml_rel_paths(self) -> dict[str, str]:
+        """返回 dataset.yaml 所需的 train/val/test 相对路径。
+
+        约定：train/val/test 各映射到对应的 images 子目录。
+        这是 yaml_writer 获取路径真相的唯一来源——禁止在别处硬编码
+        ``"train/images"`` 等字符串。
+        """
+        return {
+            "train": "train/images",
+            "val": "val/images",
+            "test": "test/images",
+        }
+
 
 def _place(src: Path, dst: Path) -> None:
     if dst.exists():
