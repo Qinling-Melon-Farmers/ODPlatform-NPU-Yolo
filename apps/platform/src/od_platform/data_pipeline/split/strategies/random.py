@@ -8,16 +8,17 @@ from __future__ import annotations
 
 import random
 
-from od_platform.common.constants import SplitStrategy
+from od_platform.common.constants import RATE_EPSILON, SplitStrategy
 from od_platform.data_pipeline.split.manifest import PairList, SplitManifest
 from od_platform.data_pipeline.split.registry import SplitOptions, register
 
 
 def _validate_rates(options: SplitOptions) -> None:
+    """校验划分比例：不可为负数（容差 RATE_EPSILON），之和必须为 1.0。"""
     rates = (options.train_rate, options.val_rate, options.test_rate)
-    if any(rate < 0 for rate in rates):
+    if any(rate < -RATE_EPSILON for rate in rates):
         raise ValueError(f"划分比例不能为负数: {rates}")
-    if abs(sum(rates) - 1.0) > 1e-8:
+    if abs(sum(rates) - 1.0) > RATE_EPSILON:
         raise ValueError(f"划分比例之和必须为 1.0，实际为 {sum(rates):.6f}")
 
 

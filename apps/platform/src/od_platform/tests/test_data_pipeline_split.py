@@ -23,6 +23,25 @@ class TestDataPipelineSplit(unittest.TestCase):
 
         self.assertIn(SplitStrategy.RANDOM, strategies)
 
+    def test_split_registry_lists_all_strategies(self) -> None:
+        """验证 RANDOM / STRATIFIED / STRATIFIED_MULTILABEL 均已注册。"""
+        strategies = list_strategies()
+
+        self.assertIn(SplitStrategy.RANDOM, strategies)
+        self.assertIn(SplitStrategy.STRATIFIED, strategies)
+        self.assertIn(SplitStrategy.STRATIFIED_MULTILABEL, strategies)
+        self.assertIn("随机", strategies[SplitStrategy.RANDOM])
+
+    def test_stratified_raises_not_implemented(self) -> None:
+        """分层策略目前为骨架，调用时抛出 NotImplementedError。"""
+        with self.assertRaises(NotImplementedError):
+            split_pairs([], SplitStrategy.STRATIFIED)
+
+    def test_stratified_multilabel_raises_not_implemented(self) -> None:
+        """多标签分层策略目前为骨架，调用时抛出 NotImplementedError。"""
+        with self.assertRaises(NotImplementedError):
+            split_pairs([], SplitStrategy.STRATIFIED_MULTILABEL)
+
     def test_collect_yolo_pairs_requires_matching_labels(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             root = Path(temp_dir)
