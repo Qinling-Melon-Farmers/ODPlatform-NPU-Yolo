@@ -8,12 +8,12 @@
 
 from __future__ import annotations
 
-import importlib
 import logging
-import pkgutil
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
+
+from od_platform.common.registry_utils import import_modules_from_package
 
 logger = logging.getLogger(__name__)
 
@@ -103,10 +103,8 @@ def _lazy_init() -> None:
     global _LAZY_INITIALIZED
     if _LAZY_INITIALIZED:
         return
-    _LAZY_INITIALIZED = True
 
     from od_platform.data_pipeline.convert import converters
 
-    for module_info in pkgutil.iter_modules(converters.__path__):
-        if not module_info.name.startswith("_"):
-            importlib.import_module(f"{converters.__name__}.{module_info.name}")
+    import_modules_from_package(converters.__name__, converters.__path__)
+    _LAZY_INITIALIZED = True

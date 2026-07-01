@@ -32,3 +32,15 @@ class Task:
     def all(cls) -> tuple[str, ...]:
         """返回全部任务类型名称。"""
         return cls.DETECT, cls.SEGMENT
+
+
+class SplitStrategy:
+    """数据集划分策略名称常量。"""
+
+    RANDOM = "random"
+    STRATIFIED = "stratified"
+
+    @classmethod
+    def all(cls) -> tuple[str, ...]:
+        """返回全部预期支持的划分策略名称。"""
+        return cls.RANDOM, cls.STRATIFIED
