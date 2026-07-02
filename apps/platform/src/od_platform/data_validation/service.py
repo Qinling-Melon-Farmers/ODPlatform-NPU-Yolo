@@ -8,8 +8,6 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
-import yaml
-
 from od_platform.common import paths
 from od_platform.common.performance_utils import time_it
 from od_platform.data_validation.registry import (
@@ -19,6 +17,7 @@ from od_platform.data_validation.registry import (
     CheckSeverity,
     get_all_checks,
 )
+from od_platform.data_validation.snapshot import build_snapshot
 
 logger = logging.getLogger(__name__)
 
@@ -63,13 +62,13 @@ def validate_dataset(
     """Validate one generated dataset yaml."""
     ctx = _build_context(yaml_path=yaml_path, task=task_type)
     results = run_all_checks(ctx)
-    report = ValidationReport(yaml_path=yaml_path, results=results)
+    report = ValidationReport(yaml_path=yaml_path, results=results, details={"ctx": ctx})
     if write_report:
         report.report_path = write_report_json(report)
     return report
 
 
-@time_it(name="所有检测耗时总计", logger_instance=logger, iterations=1)
+@time_it(name="所有检查耗时总计", logger_instance=logger, iterations=1)
 def run_all_checks(ctx: CheckContext) -> list[CheckResult]:
     """Run every registered check and collect all results."""
     entries = get_all_checks()
@@ -148,23 +147,8 @@ def render_to_logger(
 
 
 def _build_context(*, yaml_path: Path, task: str) -> CheckContext:
-    if not yaml_path.is_file():
-        raise FileNotFoundError(f"dataset yaml 不存在: {yaml_path}")
-    config = yaml.safe_load(yaml_path.read_text(encoding="utf-8"))
-    if not isinstance(config, dict):
-        raise ValueError(f"dataset yaml 内容必须是映射: {yaml_path}")
-    dataset_root_value = config.get("path")
-    if not dataset_root_value:
-        raise ValueError("dataset yaml 缺少 path 字段")
-    dataset_root = Path(str(dataset_root_value))
-    if not dataset_root.is_absolute():
-        dataset_root = (yaml_path.parent / dataset_root).resolve()
-    return CheckContext(
-        yaml_path=yaml_path,
-        config=config,
-        dataset_root=dataset_root,
-        task=task,
-    )
+    snapshot = build_snapshot(yaml_path, task_type=task)
+    return CheckContext(yaml_path=yaml_path, task=task, snapshot=snapshot)
 
 
 def _log_check_result(result: CheckResult, target_logger: logging.Logger = logger) -> None:

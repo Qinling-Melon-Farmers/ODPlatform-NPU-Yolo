@@ -9,6 +9,7 @@ from pathlib import Path
 from typing import Any
 
 from od_platform.common.registry_utils import import_submodules
+from od_platform.data_validation.snapshot import DatasetSnapshot, build_snapshot
 
 logger = logging.getLogger(__name__)
 
@@ -44,36 +45,36 @@ class CheckResult:
 
 @dataclass
 class CheckContext:
-    """Input shared by all validation checks."""
+    """Input and cached state shared by all validation checks."""
 
     yaml_path: Path
-    config: dict[str, Any]
-    dataset_root: Path
     task: str = "detect"
+    snapshot: DatasetSnapshot | None = None
 
-    def split_image_dir(self, split: str) -> Path | None:
-        value = self.config.get(split)
-        if value is None:
-            return None
-        path = Path(str(value))
-        return path if path.is_absolute() else self.dataset_root / path
+    def __post_init__(self) -> None:
+        self.yaml_path = self.yaml_path.resolve()
+        if self.snapshot is None:
+            self.snapshot = build_snapshot(self.yaml_path, task_type=self.task)
 
-    def split_label_dir(self, split: str) -> Path | None:
-        image_dir = self.split_image_dir(split)
-        if image_dir is None:
-            return None
-        if image_dir.name == "images":
-            return image_dir.parent / "labels"
-        return image_dir.parent / "labels"
+    @property
+    def config(self) -> dict[str, Any]:
+        return self.snapshot.yaml_data if self.snapshot is not None else {}
+
+    @property
+    def yaml_error(self) -> str | None:
+        return self.snapshot.yaml_load_error if self.snapshot is not None else "snapshot is not initialized"
+
+    @property
+    def has_valid_yaml(self) -> bool:
+        return self.yaml_error is None and bool(self.config)
+
+    @property
+    def dataset_root(self) -> Path:
+        return self.snapshot.data_root if self.snapshot is not None else self.yaml_path.parent
 
     @property
     def classes(self) -> list[str]:
-        names = self.config.get("names", [])
-        if isinstance(names, dict):
-            return [str(names[key]) for key in sorted(names, key=lambda item: int(item))]
-        if isinstance(names, list):
-            return [str(item) for item in names]
-        return []
+        return list(self.snapshot.class_names) if self.snapshot is not None else []
 
 
 CheckFunc = Callable[[CheckContext], CheckResult]
@@ -96,7 +97,7 @@ def check(name: str) -> Callable[[CheckFunc], CheckFunc]:
 
     def decorator(func: CheckFunc) -> CheckFunc:
         if name in _REGISTRY:
-            raise ValueError(f"check {name!r} 重复注册，第二次出现在 {func.__module__}.{func.__name__}")
+            raise ValueError(f"check {name!r} is already registered by {func.__module__}.{func.__name__}")
         _REGISTRY[name] = CheckEntry(name=name, func=func)
         return func
 
@@ -113,7 +114,7 @@ def get_check(name: str) -> CheckEntry:
     """Return one registered check by name."""
     _lazy_init()
     if name not in _REGISTRY:
-        raise ValueError(f"check {name!r} 未注册，已经注册的检查有: {list(_REGISTRY)}")
+        raise ValueError(f"check {name!r} is not registered; known checks: {list(_REGISTRY)}")
     return _REGISTRY[name]
 
 

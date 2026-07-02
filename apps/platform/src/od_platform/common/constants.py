@@ -54,4 +54,8 @@ CLASS_MIN_BOX_SHARE: float = 0.01
 COVERAGE_HARD_THRESHOLD: float = 0.5
 COVERAGE_SOFT_THRESHOLD: float = 0.9
 
+# Dataset validation thresholds for missing image-to-label pairs.
+PAIR_MISSING_WARN_RATIO: float = 0.05
+PAIR_MISSING_ERROR_RATIO: float = 0.5
+
 IMAGE_EXTENSIONS: tuple[str, ...] = (".jpg", ".jpeg", ".png", ".bmp", ".tif", ".tiff", ".webp")

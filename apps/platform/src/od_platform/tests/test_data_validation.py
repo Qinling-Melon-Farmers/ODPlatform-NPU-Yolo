@@ -14,10 +14,20 @@ from od_platform.data_validation.registry import (
     list_check_names,
 )
 from od_platform.data_validation.service import run_all_checks, validate_dataset
+from od_platform.validate_dateset.registry import CheckContext as CompatCheckContext
+from od_platform.validate_dateset.registry import list_check_names as compat_list_check_names
+from od_platform.validate_dateset.service import run_all_checks as compat_run_all_checks
 
 
 class TestDataValidation(unittest.TestCase):
-    def _make_dataset(self, root: Path, *, bad_label: bool = False, missing_label: bool = False) -> Path:
+    def _make_dataset(
+        self,
+        root: Path,
+        *,
+        bad_label: bool = False,
+        missing_label: bool = False,
+        duplicate_stem: bool = False,
+    ) -> Path:
         dataset_root = root / "dataset"
         yaml_path = root / "configs" / "demo.yaml"
         for split in ("train", "val", "test"):
@@ -25,10 +35,11 @@ class TestDataValidation(unittest.TestCase):
             label_dir = dataset_root / split / "labels"
             image_dir.mkdir(parents=True, exist_ok=True)
             label_dir.mkdir(parents=True, exist_ok=True)
-            (image_dir / f"{split}_001.jpg").write_bytes(b"image")
+            stem = "shared_001" if duplicate_stem and split in ("train", "val") else f"{split}_001"
+            (image_dir / f"{stem}.jpg").write_bytes(b"image")
             if split != "val" or not missing_label:
                 line = "3 0.5 0.5 0.1 0.1\n" if bad_label else "0 0.5 0.5 0.1 0.1\n"
-                (label_dir / f"{split}_001.txt").write_text(line, encoding="utf-8")
+                (label_dir / f"{stem}.txt").write_text(line, encoding="utf-8")
 
         yaml_path.parent.mkdir(parents=True, exist_ok=True)
         yaml_path.write_text(
@@ -51,10 +62,10 @@ class TestDataValidation(unittest.TestCase):
     def test_registry_auto_imports_builtin_checks(self) -> None:
         names = list_check_names()
 
-        self.assertIn("yaml_required_fields", names)
-        self.assertIn("split_dirs_exist", names)
-        self.assertIn("image_label_pairing", names)
-        self.assertIn("yolo_label_format", names)
+        self.assertIn("yaml_schema", names)
+        self.assertIn("pair_existence", names)
+        self.assertIn("label_format", names)
+        self.assertIn("split_uniqueness", names)
 
     def test_validate_dataset_passes_clean_yolo_dataset(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -63,7 +74,7 @@ class TestDataValidation(unittest.TestCase):
             report = validate_dataset(yaml_path=yaml_path, write_report=False)
 
             self.assertEqual(report.exit_code, 0)
-            self.assertTrue(all(result.severity == CheckSeverity.PASS for result in report.results))
+            self.assertTrue(all(result.severity in (CheckSeverity.PASS, CheckSeverity.INFO) for result in report.results))
 
     def test_validate_dataset_reports_error_and_writes_fix_items(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -78,14 +89,35 @@ class TestDataValidation(unittest.TestCase):
             self.assertEqual(payload["exit_code"], 2)
             self.assertTrue(payload["fix_items"])
 
-    def test_missing_label_is_error(self) -> None:
+    def test_missing_label_is_reported_by_pair_existence(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             yaml_path = self._make_dataset(Path(temp_dir), missing_label=True)
 
             report = validate_dataset(yaml_path=yaml_path, write_report=False)
 
+            result = next(item for item in report.results if item.name == "pair_existence")
+            self.assertNotEqual(result.severity, CheckSeverity.PASS)
+            self.assertEqual(result.details["missing_labels"], 1)
+
+    def test_split_uniqueness_detects_duplicate_stems(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            yaml_path = self._make_dataset(Path(temp_dir), duplicate_stem=True)
+
+            report = validate_dataset(yaml_path=yaml_path, write_report=False)
+
             self.assertEqual(report.exit_code, 2)
-            self.assertTrue(any(result.name == "image_label_pairing" for result in report.results))
+            result = next(item for item in report.results if item.name == "split_uniqueness")
+            self.assertEqual(result.severity, CheckSeverity.ERROR)
+
+    def test_check_context_builds_snapshot_once(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            yaml_path = self._make_dataset(Path(temp_dir))
+
+            ctx = CheckContext(yaml_path=yaml_path)
+
+            self.assertIs(ctx.snapshot, ctx.snapshot)
+            self.assertEqual(ctx.snapshot.total_images if ctx.snapshot is not None else 0, 3)
+            self.assertEqual(ctx.classes, ["ship"])
 
     def test_single_check_exception_does_not_stop_scheduler(self) -> None:
         def broken(_ctx: CheckContext) -> CheckResult:
@@ -96,13 +128,7 @@ class TestDataValidation(unittest.TestCase):
 
         with tempfile.TemporaryDirectory() as temp_dir:
             yaml_path = self._make_dataset(Path(temp_dir))
-            ctx = validate_dataset(yaml_path=yaml_path, write_report=False).details.get("ctx")
-            if ctx is None:
-                ctx = CheckContext(
-                    yaml_path=yaml_path,
-                    config={"path": str(yaml_path.parent), "names": {0: "ship"}, "nc": 1},
-                    dataset_root=yaml_path.parent,
-                )
+            ctx = CheckContext(yaml_path=yaml_path)
 
         with patch(
             "od_platform.data_validation.service.get_all_checks",
@@ -113,6 +139,16 @@ class TestDataValidation(unittest.TestCase):
         self.assertEqual([result.name for result in results], ["broken", "ok"])
         self.assertEqual(results[0].severity, CheckSeverity.ERROR)
         self.assertEqual(results[1].severity, CheckSeverity.PASS)
+
+    def test_validate_dateset_compatibility_import_path(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            yaml_path = self._make_dataset(Path(temp_dir))
+            ctx = CompatCheckContext(yaml_path=yaml_path)
+
+            results = compat_run_all_checks(ctx)
+
+        self.assertIn("yaml_schema", compat_list_check_names())
+        self.assertTrue(results)
 
     def test_cli_returns_dataset_error_code(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
