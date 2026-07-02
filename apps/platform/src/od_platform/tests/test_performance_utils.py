@@ -37,6 +37,14 @@ class TestPerformanceUtils(unittest.TestCase):
         self.assertEqual(add(1, 2), 3)
         self.assertIn("单次函数 耗时:", self.stream.getvalue())
 
+    def test_callable_name_is_resolved_at_runtime(self) -> None:
+        @time_it(name=lambda item: f"check: {item}", logger_instance=self.logger)
+        def run_check(item: str) -> str:
+            return item
+
+        self.assertEqual(run_check("yaml_required_fields"), "yaml_required_fields")
+        self.assertIn("check: yaml_required_fields", self.stream.getvalue())
+
     def test_multiple_iterations_returns_last_value_and_logs_average(self) -> None:
         calls = []
 

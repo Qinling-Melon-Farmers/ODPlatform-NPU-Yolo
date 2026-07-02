@@ -26,6 +26,7 @@ classifiers = [
 dependencies = [
     "colorlog>=6.10.1",
     "psutil>=7.2.2",
+    "pyyaml>=6.0.0",
     "torch>=2.1.1",
     "ultralytics>=8.4.82",
 ]
@@ -42,6 +43,7 @@ dev = [
 odp-init = "od_platform.cli.init_project:initialize_project"
 odp-reset = "od_platform.cli.reset_project:main"
 odp-transform = "od_platform.cli.transform_data:main"
+odp-validate = "od_platform.cli.validate_data:main"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/od_platform"]

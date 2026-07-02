@@ -64,7 +64,7 @@ def _format_duration(seconds: float) -> str:
 
 def time_it(
     iterations: int = 1,
-    name: str | None = None,
+    name: str | Callable[..., str] | None = None,
     logger_instance: logging.Logger | None = None,
 ) -> Callable:
     """通用计时装饰器工厂。
@@ -98,10 +98,9 @@ def time_it(
     logger = logger_instance or _logger
 
     def decorator(func: Callable) -> Callable:
-        func_name = name if name is not None else func.__name__
-
         @functools.wraps(func)
         def wrapper(*args: Any, **kwargs: Any) -> Any:
+            func_name = name(*args, **kwargs) if callable(name) else name or func.__name__
             if iterations <= 1:
                 start = time.perf_counter()
                 result = func(*args, **kwargs)
