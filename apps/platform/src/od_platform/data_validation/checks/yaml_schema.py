@@ -51,6 +51,11 @@ def validate_yaml_schema(ctx: CheckContext) -> CheckResult:
     if nc is not None and names_count is not None and nc != names_count:
         problems.append(f"nc 和 names 长度不一致, nc: {nc}, names: {names_count}")
 
+    # 检查类别名是否有重复 (同名会导致报告与训练统计混淆)
+    dupes = _check_duplicate_names(cfg.get("names"))
+    if dupes:
+        problems.append(f"names 中存在重复类别名: {', '.join(dupes)}")
+
     if problems:
         return CheckResult(
             name="yaml_schema",
@@ -61,6 +66,7 @@ def validate_yaml_schema(ctx: CheckContext) -> CheckResult:
                 "problems": problems,
                 "nc": nc,
                 "names_count": names_count,
+                "action": "修正 dataset.yaml 中的 nc 和 names 字段",
             },
         )
 
@@ -94,3 +100,32 @@ def _validate_names(names_raw: Any) -> tuple[int | None, str]:
         return len(names_raw), ""
 
     return None, f"names 缺失或者不是合法的列表/字典: {type(names_raw).__name__}"
+
+
+def _check_duplicate_names(names_raw: Any) -> list[str]:
+    """Return list of duplicate class names, empty if all unique."""
+    if isinstance(names_raw, list):
+        seen: set[str] = set()
+        dupes: list[str] = []
+        for name in names_raw:
+            if not isinstance(name, str):
+                continue
+            if name in seen:
+                dupes.append(name)
+            else:
+                seen.add(name)
+        return dupes
+
+    if isinstance(names_raw, dict):
+        seen: set[str] = set()
+        dupes: list[str] = []
+        for value in names_raw.values():
+            if not isinstance(value, str):
+                continue
+            if value in seen:
+                dupes.append(value)
+            else:
+                seen.add(value)
+        return dupes
+
+    return []
