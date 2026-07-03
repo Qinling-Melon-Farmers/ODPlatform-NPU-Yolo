@@ -66,6 +66,9 @@ class TestDataValidation(unittest.TestCase):
         self.assertIn("pair_existence", names)
         self.assertIn("label_format", names)
         self.assertIn("split_uniqueness", names)
+        self.assertIn("orphan_labels", names)
+        self.assertIn("class_presence", names)
+        self.assertIn("annotation_coverage", names)
 
     def test_validate_dataset_passes_clean_yolo_dataset(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -157,6 +160,53 @@ class TestDataValidation(unittest.TestCase):
             code = validate_main(["--yaml", str(yaml_path), "--no-report"])
 
             self.assertEqual(code, 2)
+
+    def test_orphan_labels_detected(self) -> None:
+        """Create a label without image → orphan_labels should report WARNING."""
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            dataset_root = root / "dataset"
+            yaml_path = root / "configs" / "demo.yaml"
+            for split in ("train", "val"):
+                image_dir = dataset_root / split / "images"
+                label_dir = dataset_root / split / "labels"
+                image_dir.mkdir(parents=True, exist_ok=True)
+                label_dir.mkdir(parents=True, exist_ok=True)
+                (image_dir / f"{split}_001.jpg").write_bytes(b"image")
+                (label_dir / f"{split}_001.txt").write_text("0 0.5 0.5 0.1 0.1\n", encoding="utf-8")
+            # orphan label: exists but no corresponding image
+            (dataset_root / "train" / "labels" / "orphan.txt").write_text("0 0.5 0.5 0.1 0.1\n", encoding="utf-8")
+
+            yaml_path.parent.mkdir(parents=True, exist_ok=True)
+            yaml_path.write_text(
+                f"path: {dataset_root.as_posix()}\ntrain: train/images\nval: val/images\nnc: 1\nnames:\n  0: ship\n",
+                encoding="utf-8",
+            )
+
+            report = validate_dataset(yaml_path=yaml_path, write_report=False)
+
+            result = next(item for item in report.results if item.name == "orphan_labels")
+            self.assertEqual(result.severity, CheckSeverity.WARNING)
+
+    def test_class_presence_all_classes_present(self) -> None:
+        """Clean dataset with all classes in all splits → PASS."""
+        with tempfile.TemporaryDirectory() as temp_dir:
+            yaml_path = self._make_dataset(Path(temp_dir))
+
+            report = validate_dataset(yaml_path=yaml_path, write_report=False)
+
+            result = next(item for item in report.results if item.name == "class_presence")
+            self.assertEqual(result.severity, CheckSeverity.PASS)
+
+    def test_annotation_coverage_healthy(self) -> None:
+        """Fully annotated dataset → PASS."""
+        with tempfile.TemporaryDirectory() as temp_dir:
+            yaml_path = self._make_dataset(Path(temp_dir))
+
+            report = validate_dataset(yaml_path=yaml_path, write_report=False)
+
+            result = next(item for item in report.results if item.name == "annotation_coverage")
+            self.assertEqual(result.severity, CheckSeverity.PASS)
 
     def test_all_builtin_checks_are_registered_once(self) -> None:
         entries = get_all_checks()
