@@ -105,14 +105,20 @@ class ValidationReport:
             advice.append(f"❌ 存在 {error_count} 个阻断性错误，训练前必须先修复。")
 
         for result in self.failed_results:
-            if result.name == "split_uniqueness":
-                advice.append("数据泄露：重新执行数据划分，确保同一图像只属于一个 split。")
-            elif result.name == "yaml_schema":
+            if result.name == "yaml_schema":
                 advice.append("配置错误：检查 dataset.yaml 的 nc 和 names 字段一致性。")
             elif result.name == "pair_existence":
                 advice.append("标签缺失：补齐缺失的标注文件；背景图也需保留空 txt 文件。")
             elif result.name == "label_format":
                 advice.append("标注格式错误：修正标注行格式后重新跑转换流水线。")
+            elif result.name == "split_uniqueness":
+                advice.append("数据泄露：重新执行数据划分，确保同一图像只属于一个 split。")
+            elif result.name == "orphan_labels":
+                advice.append("孤儿标签：删除无对应图像的标签文件，或确认图像是否被误删。")
+            elif result.name == "class_presence":
+                advice.append("类别缺失：检查标注数据是否覆盖所有声明的类别，确认划分策略对稀有类公平。")
+            elif result.name == "annotation_coverage":
+                advice.append("标注覆盖率低：检查标注文件是否完整，确认无目标的背景图数量是否合理。")
 
         return advice
 

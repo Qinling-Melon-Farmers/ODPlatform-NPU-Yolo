@@ -208,6 +208,66 @@ class TestDataValidation(unittest.TestCase):
             result = next(item for item in report.results if item.name == "annotation_coverage")
             self.assertEqual(result.severity, CheckSeverity.PASS)
 
+    def test_class_presence_missing_class_in_split(self) -> None:
+        """Class only in train, not in val → ERROR."""
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            dataset_root = root / "dataset"
+            yaml_path = root / "configs" / "demo.yaml"
+
+            for split in ("train", "val"):
+                (dataset_root / split / "images").mkdir(parents=True)
+                (dataset_root / split / "labels").mkdir(parents=True)
+
+            # train: two classes present
+            (dataset_root / "train" / "images" / "001.jpg").write_bytes(b"img")
+            (dataset_root / "train" / "labels" / "001.txt").write_text("0 0.5 0.5 0.1 0.1\n", encoding="utf-8")
+            (dataset_root / "train" / "images" / "002.jpg").write_bytes(b"img")
+            (dataset_root / "train" / "labels" / "002.txt").write_text("1 0.5 0.5 0.1 0.1\n", encoding="utf-8")
+            # val: only class 0 present, class 1 missing
+            (dataset_root / "val" / "images" / "001.jpg").write_bytes(b"img")
+            (dataset_root / "val" / "labels" / "001.txt").write_text("0 0.5 0.5 0.1 0.1\n", encoding="utf-8")
+
+            yaml_path.parent.mkdir(parents=True, exist_ok=True)
+            yaml_path.write_text(
+                f"path: {dataset_root.as_posix()}\ntrain: train/images\nval: val/images\nnc: 2\nnames:\n  0: cat\n  1: dog\n",
+                encoding="utf-8",
+            )
+
+            report = validate_dataset(yaml_path=yaml_path, write_report=False)
+            result = next(item for item in report.results if item.name == "class_presence")
+            self.assertEqual(result.severity, CheckSeverity.ERROR)
+            self.assertIn("problems", result.details)
+            self.assertTrue(any("dog" in p for p in result.details["problems"]))
+
+    def test_annotation_coverage_low_triggers_warning(self) -> None:
+        """50% unannotated → WARNING."""
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            dataset_root = root / "dataset"
+            yaml_path = root / "configs" / "demo.yaml"
+
+            for split in ("train", "val"):
+                (dataset_root / split / "images").mkdir(parents=True)
+                (dataset_root / split / "labels").mkdir(parents=True)
+            # 2 images, only 1 has a label → 50% unannotated, triggers WARNING (>30%)
+            (dataset_root / "train" / "images" / "001.jpg").write_bytes(b"img")
+            (dataset_root / "train" / "labels" / "001.txt").write_text("0 0.5 0.5 0.1 0.1\n", encoding="utf-8")
+            (dataset_root / "train" / "images" / "002.jpg").write_bytes(b"img")
+            # 002.jpg has NO label (background image)
+            (dataset_root / "val" / "images" / "001.jpg").write_bytes(b"img")
+            (dataset_root / "val" / "labels" / "001.txt").write_text("0 0.5 0.5 0.1 0.1\n", encoding="utf-8")
+
+            yaml_path.parent.mkdir(parents=True, exist_ok=True)
+            yaml_path.write_text(
+                f"path: {dataset_root.as_posix()}\ntrain: train/images\nval: val/images\nnc: 1\nnames:\n  0: ship\n",
+                encoding="utf-8",
+            )
+
+            report = validate_dataset(yaml_path=yaml_path, write_report=False)
+            result = next(item for item in report.results if item.name == "annotation_coverage")
+            self.assertEqual(result.severity, CheckSeverity.WARNING)
+
     def test_all_builtin_checks_are_registered_once(self) -> None:
         entries = get_all_checks()
 

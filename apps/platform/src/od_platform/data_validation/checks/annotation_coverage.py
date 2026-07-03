@@ -5,17 +5,16 @@ Severity: 无标注图占比超过阈值 → WARNING (可能是标注遗漏批�
 
 from __future__ import annotations
 
+from od_platform.common.constants import (
+    NO_ANNOTATION_ERROR_RATIO,
+    NO_ANNOTATION_WARN_RATIO,
+)
 from od_platform.data_validation.registry import (
     CheckContext,
     CheckResult,
     CheckSeverity,
     check,
 )
-
-# 无标注图占比超过此阈值触发 WARNING
-NO_ANNOTATION_WARN_RATIO = 0.3
-# 无标注图占比超过此阈值触发 ERROR
-NO_ANNOTATION_ERROR_RATIO = 0.7
 
 
 @check("annotation_coverage")

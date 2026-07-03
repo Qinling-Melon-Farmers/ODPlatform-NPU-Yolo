@@ -235,7 +235,7 @@ def render_to_markdown(report: object, *, executor: str | None = None) -> str:
     lines.append("")
 
     # ---- 元信息表格 ----
-    severity_emoji = _severity_emoji(report.overall_severity)
+    severity_emoji = SEVERITY_STYLE.get(report.overall_severity, _SEVERITY_DEFAULT)["emoji"]
     lines.append("| 项目 | 值 |")
     lines.append("|------|-----|")
     lines.append(f"| run_id | {report.run_id} |")
@@ -269,7 +269,7 @@ def render_to_markdown(report: object, *, executor: str | None = None) -> str:
     lines.append("| 检查项 | 严重度 | 摘要 |")
     lines.append("|--------|--------|------|")
     for r in report.results:
-        emoji = _severity_emoji(r.severity)
+        emoji = SEVERITY_STYLE.get(r.severity, _SEVERITY_DEFAULT)["emoji"]
         summary = r.summary.replace("|", "\\|")
         lines.append(f"| {r.name} | {emoji} {r.severity} | {summary} |")
     lines.append("")
@@ -338,18 +338,17 @@ def render_to_markdown(report: object, *, executor: str | None = None) -> str:
     return "\n".join(lines)
 
 
-def _severity_emoji(severity: str) -> str:
-    """Return emoji for a severity level."""
-    return {
-        "ERROR": "🔴",
-        "WARNING": "🟡",
-        "INFO": "🔵",
-        "PASS": "🟢",
-    }.get(severity, "⚪")
+SEVERITY_STYLE: dict[str, dict[str, str]] = {
+    "ERROR":   {"emoji": "🔴", "color": "red"},
+    "WARNING": {"emoji": "🟡", "color": "yellow"},
+    "INFO":    {"emoji": "🔵", "color": "blue"},
+    "PASS":    {"emoji": "🟢", "color": "green"},
+}
+_SEVERITY_DEFAULT = {"emoji": "⚪", "color": "blue"}
 
 
 # ============================================================
-# render_to_html — 占位 (任务7实现)
+# render_to_html
 # ============================================================
 
 
@@ -380,7 +379,7 @@ def render_to_html(report: object, *, executor: str | None = None) -> str:
     parts.append(f'<p class="run-id">Run ID: {report.run_id}</p>')
 
     # 元信息
-    severity_color = _severity_color(report.overall_severity)
+    severity_color = SEVERITY_STYLE.get(report.overall_severity, _SEVERITY_DEFAULT)["color"]
     parts.append('<div class="meta-grid">')
     parts.append(_meta_card("YAML 路径", str(report.yaml_path)))
     parts.append(_meta_card("任务类型", report.snapshot.task_type))
@@ -417,7 +416,7 @@ def render_to_html(report: object, *, executor: str | None = None) -> str:
     parts.append('<h2>✅ 检查结果一览</h2>')
     parts.append('<table><thead><tr><th>检查项</th><th>严重度</th><th>摘要</th></tr></thead><tbody>')
     for r in report.results:
-        color = _severity_color(r.severity)
+        color = SEVERITY_STYLE.get(r.severity, _SEVERITY_DEFAULT)["color"]
         parts.append(f'<tr><td>{r.name}</td><td><span class="badge {color}">{r.severity}</span></td><td>{r.summary}</td></tr>')
     parts.append('</tbody></table>')
 
@@ -426,7 +425,7 @@ def render_to_html(report: object, *, executor: str | None = None) -> str:
     if failed:
         parts.append('<h2>🔎 失败详情</h2>')
         for r in failed:
-            color = _severity_color(r.severity)
+            color = SEVERITY_STYLE.get(r.severity, _SEVERITY_DEFAULT)["color"]
             parts.append(f'<details class="check-detail">')
             parts.append(f'<summary><span class="badge {color}">{r.severity}</span> {r.name}</summary>')
             parts.append('<div class="detail-body">')
@@ -515,16 +514,6 @@ th { background: #f1f3f5; font-weight: 600; color: #555; }
 .action { color: #e67e22; font-weight: 600; margin-top: 8px; }
 footer { margin-top: 32px; padding-top: 16px; border-top: 1px solid #ddd; font-size: 12px; color: #999; }
 </style>"""
-
-
-def _severity_color(severity: str) -> str:
-    """Return CSS class suffix for a severity level."""
-    return {
-        "ERROR": "red",
-        "WARNING": "yellow",
-        "INFO": "blue",
-        "PASS": "green",
-    }.get(severity, "blue")
 
 
 def _meta_card(label: str, value: str) -> str:

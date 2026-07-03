@@ -58,4 +58,8 @@ COVERAGE_SOFT_THRESHOLD: float = 0.9
 PAIR_MISSING_WARN_RATIO: float = 0.05
 PAIR_MISSING_ERROR_RATIO: float = 0.5
 
+# Annotation coverage thresholds — percentage of unannotated images per split.
+NO_ANNOTATION_WARN_RATIO: float = 0.3
+NO_ANNOTATION_ERROR_RATIO: float = 0.7
+
 IMAGE_EXTENSIONS: tuple[str, ...] = (".jpg", ".jpeg", ".png", ".bmp", ".tif", ".tiff", ".webp")

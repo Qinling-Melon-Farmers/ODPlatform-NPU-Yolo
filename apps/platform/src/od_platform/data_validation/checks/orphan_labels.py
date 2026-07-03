@@ -1,6 +1,11 @@
 """orphan_labels check — 检测有标签文件无对应图像的孤儿标注。
 
 Severity: 任何孤儿标签 → WARNING (可能是清理图像时忘记删标签)。
+
+注: 本检查不调用 _skip_if_yaml_invalid()，因为孤儿标签判定只依赖
+    snapshot 中的 images_per_split 和 label_files_per_split (纯文件系统
+    扫描产物)，不依赖 yaml 配置有效性。即使 yaml 损坏，孤儿标签仍然是
+    有意义的诊断信息。
 """
 
 from __future__ import annotations
@@ -17,7 +22,12 @@ PREVIEW_LIMIT = 20
 
 @check("orphan_labels")
 def check_orphan_labels(ctx: CheckContext) -> CheckResult:
-    """Check for label files without a corresponding image."""
+    """Check for label files without a corresponding image.
+
+    Does not call _skip_if_yaml_invalid() by design: this check only uses
+    filesystem-level snapshot data (images_per_split, label_files_per_split)
+    and does not depend on yaml validity.
+    """
     snapshot = ctx.snapshot
     if snapshot is None:
         return CheckResult(

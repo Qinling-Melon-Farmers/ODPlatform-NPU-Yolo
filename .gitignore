@@ -77,6 +77,10 @@ apps/platform/meta_logging/
 apps/platform/configs/
 *.yaml
 
+# ── Claude Code 运行时信号 (不进 Git) ──
+.claude/workflow/
+.claude/session-role
+
 # 临时文件
 tmp/
 temp/
