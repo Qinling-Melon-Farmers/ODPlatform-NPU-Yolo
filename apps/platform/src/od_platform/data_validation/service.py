@@ -18,8 +18,13 @@ from od_platform.data_validation.registry import (
     CheckSeverity,
     get_all_checks,
 )
+from od_platform.data_validation.export import write_rework_csv
 from od_platform.data_validation.report import ValidationReport
-from od_platform.data_validation.render import render_to_logger
+from od_platform.data_validation.render import (
+    render_to_html,
+    render_to_logger,
+    render_to_markdown,
+)
 from od_platform.data_validation.snapshot import build_snapshot
 
 logger = logging.getLogger(__name__)
@@ -79,6 +84,23 @@ def validate_dataset(
             encoding="utf-8",
         )
         logger.info("JSON 报告已写入: %s", report_path)
+
+        md_path = run_dir / "report.md"
+        md_path.write_text(render_to_markdown(report, executor=executor), encoding="utf-8")
+        logger.info("Markdown 报告已写入: %s", md_path)
+
+        try:
+            html_path = run_dir / "report.html"
+            html_path.write_text(render_to_html(report, executor=executor), encoding="utf-8")
+            logger.info("HTML 报告已写入: %s", html_path)
+        except Exception as exc:
+            logger.warning("HTML 报告生成失败 (不阻断验证): %s", exc)
+
+        try:
+            csv_path = run_dir / "rework.csv"
+            write_rework_csv(report, csv_path)
+        except Exception as exc:
+            logger.warning("CSV 返工清单生成失败 (不阻断验证): %s", exc)
 
     return report
 
