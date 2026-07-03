@@ -12,10 +12,12 @@ from od_platform.common.paths import (
     RAW_DATA_DIR,
     ROOT_DIR,
     RUNS_DIR,
+    RUNTIME_CONFIGS_DIR,
     VALIDATION_RUNS_DIR,
     get_dirs_to_initialize,
     get_dirs_to_reset,
     is_protected,
+    runtime_config_path,
 )
 
 
@@ -37,6 +39,10 @@ class TestPaths(unittest.TestCase):
         self.assertTrue(all(isinstance(path, Path) for path in dirs))
         self.assertIn(RAW_DATA_DIR, dirs)
         self.assertIn(LOGGING_DIR, dirs)
+        self.assertIn(RUNTIME_CONFIGS_DIR, dirs)
+
+    def test_runtime_config_path_points_to_runtime_config_dir(self) -> None:
+        self.assertEqual(runtime_config_path("train"), RUNTIME_CONFIGS_DIR / "train.yaml")
 
     def test_reset_dirs_are_runtime_allowlist(self) -> None:
         dirs = get_dirs_to_reset()

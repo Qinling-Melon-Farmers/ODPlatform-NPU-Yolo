@@ -1,0 +1,279 @@
+"""Training service with auditable logs and model archiving."""
+
+from __future__ import annotations
+
+import json
+import logging
+import re
+import shutil
+from dataclasses import dataclass
+from datetime import datetime
+from pathlib import Path
+from typing import Any
+
+import yaml
+
+from od_platform.common import paths
+from od_platform.common.refs import resolve_yaml
+from od_platform.common.system_utils import get_basic_device_info
+from od_platform.runtime_config.train import YOLOTrainConfig
+
+logger = logging.getLogger(__name__)
+
+
+@dataclass(frozen=True)
+class TrainingRunPlan:
+    """All filesystem names derived for one training run."""
+
+    sequence: int
+    timestamp: str
+    task: str
+    model_slug: str
+    source_run_name: str
+    archive_run_name: str
+    source_run_dir: Path
+    ultralytics_project: Path
+    log_file: Path
+    archive_root: Path
+
+
+@dataclass(frozen=True)
+class TrainingRunResult:
+    """Result metadata returned by run_training."""
+
+    plan: TrainingRunPlan
+    dry_run: bool
+    manifest_path: Path
+    archived_weights: dict[str, Path]
+
+
+def build_training_run_plan(config: YOLOTrainConfig, *, now: datetime | None = None) -> TrainingRunPlan:
+    """Build a stable run plan: train-N, log file, and archive base name."""
+    sequence = _next_training_sequence(config.task)
+    timestamp = (now or datetime.now()).strftime("%Y%m%d-%H%M%S")
+    model_slug = _model_slug(config.model)
+    source_run_name = f"train-{sequence}"
+    archive_run_name = f"{source_run_name}-{timestamp}-{model_slug}"
+    ultralytics_project = paths.RUNS_DIR / config.task
+    return TrainingRunPlan(
+        sequence=sequence,
+        timestamp=timestamp,
+        task=config.task,
+        model_slug=model_slug,
+        source_run_name=source_run_name,
+        archive_run_name=archive_run_name,
+        source_run_dir=ultralytics_project / source_run_name,
+        ultralytics_project=ultralytics_project,
+        log_file=paths.LOGGING_DIR / "training" / f"{archive_run_name}.log",
+        archive_root=paths.TRAINED_MODELS_DIR,
+    )
+
+
+def run_training(
+    config: YOLOTrainConfig,
+    *,
+    config_source: Path | None = None,
+    executor: str | None = None,
+    dry_run: bool = False,
+) -> TrainingRunResult:
+    """Run or dry-run YOLO training with audit logs and post-run archiving."""
+    plan = build_training_run_plan(config)
+    run_logger = _configure_training_logger(plan.log_file)
+    dataset_yaml = resolve_yaml(config.data)
+    dataset_summary = summarize_dataset(dataset_yaml)
+
+    run_logger.info("training run: %s", plan.archive_run_name)
+    run_logger.info("executor: %s", executor or "unknown")
+    run_logger.info("config source: %s", config_source or "direct object")
+    run_logger.info("dataset yaml: %s", dataset_yaml)
+    run_logger.info("dataset summary: %s", json.dumps(dataset_summary, ensure_ascii=False, sort_keys=True))
+    run_logger.info("ultralytics output: %s", plan.source_run_dir)
+    run_logger.info("model archive root: %s", plan.archive_root)
+    run_logger.info("runtime config: %s", json.dumps(config.audit_snapshot(), ensure_ascii=False, sort_keys=True))
+
+    manifest_path: Path | None = None
+    if dry_run:
+        manifest_path = write_training_manifest(
+            plan,
+            config,
+            config_source=config_source,
+            executor=executor,
+            dataset_summary=dataset_summary,
+            dry_run=True,
+        )
+
+    archived: dict[str, Path] = {}
+    if not dry_run:
+        kwargs = config.to_ultralytics_kwargs()
+        kwargs.update(
+            {
+                "data": str(dataset_yaml),
+                "project": str(plan.ultralytics_project),
+                "name": plan.source_run_name,
+            }
+        )
+        run_logger.info("start ultralytics training")
+        from ultralytics import YOLO
+
+        model = YOLO(config.model)
+        model.train(**kwargs)
+        run_logger.info("ultralytics training finished")
+        manifest_path = write_training_manifest(
+            plan,
+            config,
+            config_source=config_source,
+            executor=executor,
+            dataset_summary=dataset_summary,
+            dry_run=False,
+        )
+        if config.archive_weights:
+            archived = archive_model_weights(
+                plan.source_run_dir,
+                plan.archive_run_name,
+                config.model,
+                copy=config.copy_archive,
+            )
+            run_logger.info("archived weights: %s", {key: str(value) for key, value in archived.items()})
+    else:
+        run_logger.info("dry run enabled; ultralytics training skipped")
+
+    _close_logger(run_logger)
+    if manifest_path is None:
+        raise RuntimeError("training manifest was not written")
+    return TrainingRunResult(plan=plan, dry_run=dry_run, manifest_path=manifest_path, archived_weights=archived)
+
+
+def write_training_manifest(
+    plan: TrainingRunPlan,
+    config: YOLOTrainConfig,
+    *,
+    config_source: Path | None,
+    executor: str | None,
+    dataset_summary: dict[str, Any] | None = None,
+    dry_run: bool = False,
+) -> Path:
+    """Write a machine-readable training manifest next to the run output."""
+    plan.source_run_dir.mkdir(parents=True, exist_ok=True)
+    payload = {
+        "run_name": plan.source_run_name,
+        "archive_run_name": plan.archive_run_name,
+        "dry_run": dry_run,
+        "executor": executor,
+        "created_at": datetime.now().isoformat(timespec="seconds"),
+        "config_source": str(config_source) if config_source else None,
+        "config": config.audit_snapshot(),
+        "dataset": dataset_summary or summarize_dataset(resolve_yaml(config.data)),
+        "device_info": get_basic_device_info(),
+        "outputs": {
+            "ultralytics_run_dir": str(plan.source_run_dir),
+            "log_file": str(plan.log_file),
+            "archive_root": str(plan.archive_root),
+        },
+    }
+    output = plan.source_run_dir / "training_manifest.json"
+    output.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
+    return output
+
+
+def summarize_dataset(yaml_path: Path) -> dict[str, Any]:
+    """Read basic dataset information for training logs and manifests."""
+    summary: dict[str, Any] = {"yaml_path": str(yaml_path), "exists": yaml_path.exists()}
+    if not yaml_path.exists():
+        return summary
+    try:
+        data = yaml.safe_load(yaml_path.read_text(encoding="utf-8")) or {}
+    except Exception as exc:
+        summary["load_error"] = f"{type(exc).__name__}: {exc}"
+        return summary
+    if not isinstance(data, dict):
+        summary["load_error"] = f"top-level is {type(data).__name__}, expected dict"
+        return summary
+    summary.update(
+        {
+            "path": data.get("path"),
+            "train": data.get("train"),
+            "val": data.get("val"),
+            "test": data.get("test"),
+            "nc": data.get("nc"),
+            "names": data.get("names"),
+        }
+    )
+    return summary
+
+
+def archive_model_weights(
+    source_run_dir: Path,
+    archive_run_name: str,
+    model_name: str,
+    *,
+    copy: bool = True,
+) -> dict[str, Path]:
+    """Archive Ultralytics best.pt and last.pt into models/trained."""
+    archived: dict[str, Path] = {}
+    weights_dir = source_run_dir / "weights"
+    for kind in ("best", "last"):
+        src = weights_dir / f"{kind}.pt"
+        if not src.exists():
+            logger.warning("weight file not found, skip archive: %s", src)
+            continue
+        dst_dir = paths.TRAINED_MODELS_DIR / f"{archive_run_name}-{kind}"
+        dst_dir.mkdir(parents=True, exist_ok=True)
+        dst = dst_dir / f"{kind}.pt"
+        if copy:
+            shutil.copy2(src, dst)
+        else:
+            shutil.move(str(src), str(dst))
+        metadata = {
+            "kind": kind,
+            "model": model_name,
+            "source": str(src),
+            "archive": str(dst),
+            "archived_at": datetime.now().isoformat(timespec="seconds"),
+        }
+        (dst_dir / "metadata.json").write_text(json.dumps(metadata, ensure_ascii=False, indent=2), encoding="utf-8")
+        archived[kind] = dst
+    return archived
+
+
+def _next_training_sequence(task: str) -> int:
+    pattern = re.compile(r"^train-(\d+)(?:\D.*)?$")
+    numbers: list[int] = []
+    for base in (paths.RUNS_DIR / task, paths.TRAINED_MODELS_DIR):
+        if not base.exists():
+            continue
+        for item in base.iterdir():
+            match = pattern.match(item.name)
+            if match:
+                numbers.append(int(match.group(1)))
+    return max(numbers, default=0) + 1
+
+
+def _model_slug(model_name: str) -> str:
+    stem = Path(str(model_name)).stem or "model"
+    slug = re.sub(r"[^A-Za-z0-9_-]+", "-", stem).strip("-_")
+    return slug or "model"
+
+
+def _configure_training_logger(log_file: Path) -> logging.Logger:
+    log_file.parent.mkdir(parents=True, exist_ok=True)
+    run_logger = logging.getLogger(f"od_platform.training.{log_file.stem}")
+    run_logger.handlers.clear()
+    run_logger.setLevel(logging.INFO)
+    run_logger.propagate = False
+    formatter = logging.Formatter(
+        "%(asctime)s - %(levelname)-8s - %(name)s - %(message)s",
+        datefmt="%Y-%m-%d %H:%M:%S",
+    )
+    file_handler = logging.FileHandler(log_file, encoding="utf-8")
+    file_handler.setFormatter(formatter)
+    run_logger.addHandler(file_handler)
+    stream_handler = logging.StreamHandler()
+    stream_handler.setFormatter(formatter)
+    run_logger.addHandler(stream_handler)
+    return run_logger
+
+
+def _close_logger(run_logger: logging.Logger) -> None:
+    for handler in list(run_logger.handlers):
+        handler.close()
+        run_logger.removeHandler(handler)

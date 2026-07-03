@@ -43,6 +43,7 @@ TEST_DIR: Path = DATA_DIR / "test"
 
 CONFIGS_DIR: Path = APP_DIR / "configs"
 DATASET_CONFIGS_DIR: Path = CONFIGS_DIR / "datasets"
+RUNTIME_CONFIGS_DIR: Path = CONFIGS_DIR / "runtime"
 LOGGING_DIR: Path = APP_DIR / "logging"
 META_LOGGING_DIR: Path = APP_DIR / "meta_logging"
 UNIT_TEST_DIR: Path = APP_DIR / "tests"
@@ -78,6 +79,7 @@ def get_dirs_to_initialize() -> list[Path]:
         PROCESSED_DATA_DIR,
         CONFIGS_DIR,
         DATASET_CONFIGS_DIR,
+        RUNTIME_CONFIGS_DIR,
         LOGGING_DIR,
         UNIT_TEST_DIR,
         DOCS_DIR,
@@ -160,6 +162,11 @@ def validation_run_dir(run_id: str) -> Path:
         Path 对象 (尚未创建, 调用方自己 mkdir)
     """
     return VALIDATION_RUNS_DIR / run_id
+
+
+def runtime_config_path(name: str) -> Path:
+    """Return one runtime config path: apps/platform/configs/runtime/<name>.yaml."""
+    return RUNTIME_CONFIGS_DIR / f"{name}.yaml"
 
 
 if __name__ == "__main__":
