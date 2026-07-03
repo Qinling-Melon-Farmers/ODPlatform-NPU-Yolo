@@ -29,6 +29,7 @@ APP_DIR: Path = ROOT_DIR / "apps" / "platform"
 DATA_DIR: Path = ROOT_DIR / "data"
 MODELS_DIR: Path = ROOT_DIR / "models"
 RUNS_DIR: Path = ROOT_DIR / "runs"
+VALIDATION_RUNS_DIR: Path = RUNS_DIR / "data_validation"
 
 PRETRAINED_MODELS_DIR: Path = MODELS_DIR / "pretrained"
 TRAINED_MODELS_DIR: Path = MODELS_DIR / "trained"
@@ -93,6 +94,7 @@ def get_dirs_to_reset() -> list[Path]:
     """
     return [
         RUNS_DIR,
+        VALIDATION_RUNS_DIR,
         CHECKPOINTS_DIR,
         LOGGING_DIR,
         TRAIN_DIR,
@@ -146,6 +148,18 @@ def dataset_processed_dir(name: str) -> Path:
 def dataset_yaml_path(name: str) -> Path:
     """Return the generated Ultralytics yaml path for one dataset name."""
     return DATASET_CONFIGS_DIR / f"{name}.yaml"
+
+
+def validation_run_dir(run_id: str) -> Path:
+    """返回某次验证运行的产出目录: runs/data_validation/<run_id>/
+
+    Args:
+        run_id: 形如 "20260516_184523" 的时间戳 ID (由 validate_dataset 生成)
+
+    Returns:
+        Path 对象 (尚未创建, 调用方自己 mkdir)
+    """
+    return VALIDATION_RUNS_DIR / run_id
 
 
 if __name__ == "__main__":
