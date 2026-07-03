@@ -45,6 +45,7 @@ class ValidationReport:
     started_at_iso: str
     run_dir: Path | None = None
     executor: str | None = field(default=None)
+    device_info: dict[str, Any] | None = field(default=None)
 
     # ---------- 派生属性 ----------
 
@@ -133,6 +134,12 @@ class ValidationReport:
             "executor": self.executor,
             "started_at": self.started_at_iso,
             "duration_seconds": round(self.duration_seconds, 3),
+            "audit": {
+                "executor": self.executor,
+                "started_at": self.started_at_iso,
+                "duration_seconds": round(self.duration_seconds, 3),
+                "device_info": self.device_info or {},
+            },
             "overall_severity": self.overall_severity,
             "exit_code": self.exit_code,
             "counts": self.counts_by_severity,

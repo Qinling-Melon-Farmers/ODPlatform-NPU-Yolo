@@ -11,6 +11,7 @@ from pathlib import Path
 from od_platform.common import paths
 from od_platform.common.performance_utils import time_it
 from od_platform.common.system_utils import log_device_info
+from od_platform.data_validation.export import write_rework_csv
 from od_platform.data_validation.registry import (
     CheckContext,
     CheckEntry,
@@ -18,13 +19,11 @@ from od_platform.data_validation.registry import (
     CheckSeverity,
     get_all_checks,
 )
-from od_platform.data_validation.export import write_rework_csv
-from od_platform.data_validation.report import ValidationReport
 from od_platform.data_validation.render import (
     render_to_html,
-    render_to_logger,
     render_to_markdown,
 )
+from od_platform.data_validation.report import ValidationReport
 from od_platform.data_validation.snapshot import build_snapshot
 
 logger = logging.getLogger(__name__)
@@ -56,7 +55,7 @@ def validate_dataset(
     t0 = time.perf_counter()
     started_iso = datetime.now(timezone.utc).isoformat()
 
-    log_device_info(logger)
+    device_info = log_device_info(logger)
     if executor:
         logger.info("执行人: %s", executor)
 
@@ -75,6 +74,7 @@ def validate_dataset(
         started_at_iso=started_iso,
         run_dir=run_dir,
         executor=executor,
+        device_info=device_info,
     )
 
     if write_report and run_dir is not None:

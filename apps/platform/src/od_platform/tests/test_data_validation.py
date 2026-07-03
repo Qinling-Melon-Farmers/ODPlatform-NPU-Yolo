@@ -83,14 +83,19 @@ class TestDataValidation(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temp_dir:
             root = Path(temp_dir)
             yaml_path = self._make_dataset(root, bad_label=True)
-            with patch("od_platform.data_validation.service.paths.RUNS_DIR", root / "runs"):
-                report = validate_dataset(yaml_path=yaml_path, write_report=True)
+            with patch("od_platform.data_validation.service.paths.VALIDATION_RUNS_DIR", root / "runs" / "data_validation"):
+                report = validate_dataset(yaml_path=yaml_path, write_report=True, executor="测试执行人")
 
             self.assertEqual(report.exit_code, 2)
             self.assertIsNotNone(report.report_path)
             payload = json.loads((report.report_path or Path()).read_text(encoding="utf-8"))
             self.assertEqual(payload["exit_code"], 2)
             self.assertTrue(payload["fix_items"])
+            self.assertEqual(payload["audit"]["executor"], "测试执行人")
+            self.assertTrue(payload["audit"]["device_info"])
+            self.assertTrue((report.report_path.parent / "report.md").exists())
+            self.assertTrue((report.report_path.parent / "report.html").exists())
+            self.assertTrue((report.report_path.parent / "rework.csv").exists())
 
     def test_missing_label_is_reported_by_pair_existence(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:

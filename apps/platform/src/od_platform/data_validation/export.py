@@ -113,7 +113,7 @@ def _collect_rework_rows(report: object) -> list[dict[str, str]]:
                         "file_path": path,
                         "line_number": "",
                         "issue_type": "missing_label",
-                        "description": f"缺少同名 label 文件",
+                        "description": "缺少同名 label 文件",
                         "suggested_action": action,
                     })
 
@@ -136,7 +136,7 @@ def _collect_rework_rows(report: object) -> list[dict[str, str]]:
                     rows.append({
                         "check_name": r.name,
                         "severity": r.severity,
-                        "split": f'{o["split_a"]}↔{o["split_b"]}',
+                        "split": f'{o["split_a"]}->{o["split_b"]}',
                         "file_path": stem,
                         "line_number": "",
                         "issue_type": "split_leakage",

@@ -54,7 +54,7 @@ def check_pair_existence(ctx: CheckContext) -> CheckResult:
     for split, images in snapshot.images_per_split.items():
         labels = snapshot.labels_per_split.get(split, ())
         missing_in_split: list[str] = []
-        for img, lbl in zip(images, labels):
+        for img, lbl in zip(images, labels, strict=True):
             total_images += 1
             if not lbl.exists():
                 total_missing += 1

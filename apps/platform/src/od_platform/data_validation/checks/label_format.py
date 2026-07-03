@@ -16,7 +16,6 @@ details 收集:
 from __future__ import annotations
 
 from collections import Counter
-from pathlib import Path
 from typing import Any
 
 from od_platform.common.constants import Task

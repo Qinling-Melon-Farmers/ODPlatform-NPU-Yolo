@@ -326,13 +326,13 @@ def render_to_markdown(report: object, *, executor: str | None = None) -> str:
     # ---- 审计信息 ----
     lines.append("## 审计信息")
     lines.append("")
-    lines.append(f"- 工具: ODPlatform odp-validate")
+    lines.append("- 工具: ODPlatform odp-validate")
     lines.append(f"- 报告生成时间: {report.started_at_iso}")
     lines.append(f"- 执行人: {executor or '(未指定)'}")
     lines.append("")
     lines.append("---")
     lines.append("")
-    lines.append(f"*签字: _____________ &nbsp;&nbsp;&nbsp;&nbsp; 日期: _____________*")
+    lines.append("*签字: _____________ &nbsp;&nbsp;&nbsp;&nbsp; 日期: _____________*")
     lines.append("")
 
     return "\n".join(lines)
@@ -375,7 +375,7 @@ def render_to_html(report: object, *, executor: str | None = None) -> str:
     parts.append("<body>")
 
     # 标题
-    parts.append(f'<h1>🔍 YOLO 数据集质量验证报告</h1>')
+    parts.append('<h1>🔍 YOLO 数据集质量验证报告</h1>')
     parts.append(f'<p class="run-id">Run ID: {report.run_id}</p>')
 
     # 元信息
@@ -396,10 +396,10 @@ def render_to_html(report: object, *, executor: str | None = None) -> str:
     for sev, color in [("PASS", "green"), ("INFO", "blue"), ("WARNING", "yellow"), ("ERROR", "red")]:
         count = counts.get(sev, 0)
         pct = (count / max_count * 100) if max_count else 0
-        parts.append(f'<div class="bar-row">')
+        parts.append('<div class="bar-row">')
         parts.append(f'<span class="bar-label">{sev}</span>')
         parts.append(f'<div class="bar-track"><div class="bar-fill {color}" style="width:{pct:.0f}%">{count}</div></div>')
-        parts.append(f'</div>')
+        parts.append("</div>")
     parts.append('</div>')
 
     # 数据集摘要
@@ -426,7 +426,7 @@ def render_to_html(report: object, *, executor: str | None = None) -> str:
         parts.append('<h2>🔎 失败详情</h2>')
         for r in failed:
             color = SEVERITY_STYLE.get(r.severity, _SEVERITY_DEFAULT)["color"]
-            parts.append(f'<details class="check-detail">')
+            parts.append('<details class="check-detail">')
             parts.append(f'<summary><span class="badge {color}">{r.severity}</span> {r.name}</summary>')
             parts.append('<div class="detail-body">')
 
