@@ -12,7 +12,8 @@ from od_platform.data_validation.registry import (
     get_check,
     list_check_names,
 )
-from od_platform.data_validation.service import ValidationReport, validate_dataset
+from od_platform.data_validation.report import ValidationReport
+from od_platform.data_validation.service import run_all_checks, validate_dataset
 
 __all__ = [
     "CheckContext",
@@ -24,5 +25,6 @@ __all__ = [
     "get_all_checks",
     "get_check",
     "list_check_names",
+    "run_all_checks",
     "validate_dataset",
 ]

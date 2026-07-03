@@ -4,12 +4,13 @@ from __future__ import annotations
 
 import json
 import logging
-from dataclasses import dataclass, field
+import time
+from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any
 
 from od_platform.common import paths
 from od_platform.common.performance_utils import time_it
+from od_platform.common.system_utils import log_device_info
 from od_platform.data_validation.registry import (
     CheckContext,
     CheckEntry,
@@ -17,40 +18,11 @@ from od_platform.data_validation.registry import (
     CheckSeverity,
     get_all_checks,
 )
+from od_platform.data_validation.report import ValidationReport
+from od_platform.data_validation.render import render_to_logger
 from od_platform.data_validation.snapshot import build_snapshot
 
 logger = logging.getLogger(__name__)
-
-
-@dataclass
-class ValidationReport:
-    """Aggregated validation report."""
-
-    yaml_path: Path
-    results: list[CheckResult]
-    report_path: Path | None = None
-    details: dict[str, Any] = field(default_factory=dict)
-
-    @property
-    def max_severity(self) -> str:
-        if not self.results:
-            return CheckSeverity.INFO
-        return max(self.results, key=lambda item: CheckSeverity.rank(item.severity)).severity
-
-    @property
-    def exit_code(self) -> int:
-        if any(result.severity == CheckSeverity.ERROR for result in self.results):
-            return 2
-        if any(result.severity == CheckSeverity.WARNING for result in self.results):
-            return 1
-        return 0
-
-    @property
-    def summary(self) -> dict[str, int]:
-        counts: dict[str, int] = {}
-        for result in self.results:
-            counts[result.severity] = counts.get(result.severity, 0) + 1
-        return counts
 
 
 def validate_dataset(
@@ -58,13 +30,56 @@ def validate_dataset(
     yaml_path: Path,
     task_type: str = "detect",
     write_report: bool = True,
+    run_id: str | None = None,
+    executor: str | None = None,
 ) -> ValidationReport:
-    """Validate one generated dataset yaml."""
-    ctx = _build_context(yaml_path=yaml_path, task=task_type)
+    """端到端验证: 构造 snapshot → 跑 check → 包装 report → 可选写盘。
+
+    Args:
+        yaml_path:    数据集 yaml 文件路径
+        task_type:    'detect' / 'segment'
+        write_report: 是否写 JSON 报告到 run_dir/report.json
+        run_id:       手动指定运行 ID; None 表示自动用时间戳
+        executor:     执行人姓名, 记录到报告审计字段
+    """
+    resolved_run_id = run_id or datetime.now().strftime("%Y%m%d_%H%M%S")
+    run_dir = paths.validation_run_dir(resolved_run_id) if write_report else None
+
+    if write_report and run_dir is not None:
+        run_dir.mkdir(parents=True, exist_ok=True)
+
+    t0 = time.perf_counter()
+    started_iso = datetime.now(timezone.utc).isoformat()
+
+    log_device_info(logger)
+    if executor:
+        logger.info("执行人: %s", executor)
+
+    snapshot = build_snapshot(yaml_path=yaml_path, task_type=task_type)
+    ctx = CheckContext(yaml_path=yaml_path, snapshot=snapshot)
     results = run_all_checks(ctx)
-    report = ValidationReport(yaml_path=yaml_path, results=results, details={"ctx": ctx})
-    if write_report:
-        report.report_path = write_report_json(report)
+
+    duration = time.perf_counter() - t0
+
+    report = ValidationReport(
+        run_id=resolved_run_id,
+        yaml_path=yaml_path,
+        snapshot=snapshot,
+        results=results,
+        duration_seconds=duration,
+        started_at_iso=started_iso,
+        run_dir=run_dir,
+        executor=executor,
+    )
+
+    if write_report and run_dir is not None:
+        report_path = run_dir / "report.json"
+        report_path.write_text(
+            json.dumps(report.to_dict(), indent=2, ensure_ascii=False),
+            encoding="utf-8",
+        )
+        logger.info("JSON 报告已写入: %s", report_path)
+
     return report
 
 
@@ -98,57 +113,17 @@ def _safe_run_one(entry: CheckEntry, ctx: CheckContext) -> CheckResult:
 
 
 def write_report_json(report: ValidationReport) -> Path:
-    """Write a machine-readable report and return its path."""
-    output_dir = paths.RUNS_DIR / "data_validation"
-    output_dir.mkdir(parents=True, exist_ok=True)
-    output = output_dir / f"{report.yaml_path.stem}-validation.json"
-    payload = {
-        "yaml_path": str(report.yaml_path),
-        "max_severity": report.max_severity,
-        "exit_code": report.exit_code,
-        "summary": report.summary,
-        "results": [
-            {
-                "name": result.name,
-                "severity": result.severity,
-                "summary": result.summary,
-                "details": result.details,
-            }
-            for result in report.results
-        ],
-        "fix_items": [
-            {
-                "name": result.name,
-                "severity": result.severity,
-                "summary": result.summary,
-                "action": result.details.get("action", "人工复核"),
-            }
-            for result in report.results
-            if result.severity in (CheckSeverity.WARNING, CheckSeverity.ERROR)
-        ],
-    }
-    output.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
+    """Write a machine-readable report using report.to_dict()."""
+    run_dir = report.run_dir
+    if run_dir is None:
+        run_dir = paths.validation_run_dir(report.run_id)
+    run_dir.mkdir(parents=True, exist_ok=True)
+    output = run_dir / "report.json"
+    output.write_text(
+        json.dumps(report.to_dict(), indent=2, ensure_ascii=False),
+        encoding="utf-8",
+    )
     return output
-
-
-def render_to_logger(
-    report: ValidationReport,
-    target_logger: logging.Logger,
-    *,
-    report_path: Path | None = None,
-) -> None:
-    """Render a validation report to logs."""
-    target_logger.info("数据质检完成: %s", report.yaml_path)
-    target_logger.info("结果统计: %s, exit_code=%d", report.summary, report.exit_code)
-    for result in report.results:
-        _log_check_result(result, target_logger)
-    if report_path is not None:
-        target_logger.info("质检报告: %s", report_path)
-
-
-def _build_context(*, yaml_path: Path, task: str) -> CheckContext:
-    snapshot = build_snapshot(yaml_path, task_type=task)
-    return CheckContext(yaml_path=yaml_path, task=task, snapshot=snapshot)
 
 
 def _log_check_result(result: CheckResult, target_logger: logging.Logger = logger) -> None:

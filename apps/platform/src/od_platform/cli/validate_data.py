@@ -5,12 +5,13 @@ from __future__ import annotations
 import argparse
 import logging
 import sys
+from pathlib import Path
 
 from od_platform.common.constants import Task
 from od_platform.common.logging_utils import get_logger
-from od_platform.common.paths import LOGGING_DIR
-from od_platform.common.refs import resolve_yaml
-from od_platform.data_validation.service import render_to_logger, validate_dataset
+from od_platform.common.paths import LOGGING_DIR, dataset_yaml_path
+from od_platform.data_validation.render import render_to_logger
+from od_platform.data_validation.service import validate_dataset
 
 EXIT_OK = 0
 EXIT_WARNING = 1
@@ -25,10 +26,11 @@ def build_parser() -> argparse.ArgumentParser:
     )
     target = parser.add_mutually_exclusive_group(required=True)
     target.add_argument("--dataset", help="数据集配置名称，解析为 configs/datasets/<name>.yaml")
-    target.add_argument("--yaml", help="dataset.yaml 路径")
+    target.add_argument("--yaml", type=Path, help="dataset.yaml 路径")
     parser.add_argument("--task", default=Task.DETECT, choices=Task.all())
-    parser.add_argument("--no-report", action="store_true", help="只输出日志，不写 runs/data_validation 报告")
-    parser.add_argument("--verbose", action="store_true", help="输出 DEBUG 日志")
+    parser.add_argument("--no-report", action="store_true", help="只输出日志，不写 JSON 报告")
+    parser.add_argument("--verbose", "-v", action="store_true", help="输出 DEBUG 日志")
+    parser.add_argument("--executor", "-e", help="执行人姓名，记录到报告审计字段")
     return parser
 
 
@@ -45,11 +47,16 @@ def main(argv: list[str] | None = None) -> int:
     )
 
     try:
-        ref = args.dataset if args.dataset else args.yaml
+        if args.dataset:
+            yaml_path = dataset_yaml_path(args.dataset)
+        else:
+            yaml_path = args.yaml.resolve()
+
         report = validate_dataset(
-            yaml_path=resolve_yaml(ref),
+            yaml_path=yaml_path,
             task_type=args.task,
             write_report=not args.no_report,
+            executor=args.executor,
         )
         render_to_logger(report, logger, report_path=report.report_path)
         return report.exit_code
