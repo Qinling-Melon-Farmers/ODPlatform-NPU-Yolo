@@ -77,9 +77,8 @@ apps/platform/meta_logging/
 apps/platform/configs/
 *.yaml
 
-# ── Claude Code 运行时信号 (不进 Git) ──
-.claude/workflow/
-.claude/session-role
+# ── Claude Code 本地配置 (各开发者独立, 不进 Git) ──
+.claude/
 
 # 临时文件
 tmp/
