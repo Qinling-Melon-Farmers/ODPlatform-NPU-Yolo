@@ -58,9 +58,9 @@ def build_training_run_plan(config: YOLOTrainConfig, *, now: datetime | None = N
     sequence = _next_training_sequence(config.task)
     timestamp = (now or datetime.now()).strftime("%Y%m%d-%H%M%S")
     model_slug = _model_slug(config.model)
-    source_run_name = f"train-{sequence}"
+    source_run_name = config.name or f"train-{sequence}"
     archive_run_name = f"{source_run_name}-{timestamp}-{model_slug}"
-    ultralytics_project = paths.RUNS_DIR / config.task
+    ultralytics_project = Path(config.project).resolve() if config.project else paths.RUNS_DIR / config.task
     return TrainingRunPlan(
         sequence=sequence,
         timestamp=timestamp,

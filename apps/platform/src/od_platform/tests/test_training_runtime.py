@@ -7,6 +7,7 @@ from datetime import datetime
 from pathlib import Path
 from unittest.mock import patch
 
+from od_platform.cli.model_train import main as model_train_main
 from od_platform.cli.train_model import main as train_main
 from od_platform.runtime_config.generator import write_train_template
 from od_platform.runtime_config.loaders import load_train_config
@@ -61,6 +62,24 @@ class TestTrainingRuntime(unittest.TestCase):
             self.assertEqual(plan.source_run_name, "train-4")
             self.assertEqual(plan.archive_run_name, "train-4-20260703-153001-yolo11n")
             self.assertEqual(plan.log_file.name, "train-4-20260703-153001-yolo11n.log")
+
+    def test_build_training_run_plan_honors_custom_project_and_name(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            with self._patch_runtime_paths(root):
+                plan = build_training_run_plan(
+                    YOLOTrainConfig(
+                        data="rsod",
+                        model="yolo11n.pt",
+                        project=str(root / "custom_runs"),
+                        name="steel-baseline",
+                    ),
+                    now=datetime(2026, 7, 6, 16, 0, 0),
+                )
+
+            self.assertEqual(plan.source_run_name, "steel-baseline")
+            self.assertEqual(plan.ultralytics_project, (root / "custom_runs").resolve())
+            self.assertEqual(plan.source_run_dir, (root / "custom_runs").resolve() / "steel-baseline")
 
     def test_archive_model_weights_copies_best_and_last(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -159,6 +178,43 @@ class TestTrainingRuntime(unittest.TestCase):
                 code = train_main(["--config", str(config_path), "--dry-run", "--executor", "tester"])
 
             self.assertEqual(code, 0)
+
+    def test_cli_overrides_yaml_config_fields(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            config_path = root / "train.yaml"
+            config_path.write_text("model: yolo11n.pt\ndata: rsod\nepochs: 10\nbatch: 16\n", encoding="utf-8")
+            captured = {}
+
+            def fake_run_training(config, **kwargs):
+                captured["config"] = config
+                captured["kwargs"] = kwargs
+
+            with patch("od_platform.cli.train_model.run_training", side_effect=fake_run_training):
+                code = train_main(
+                    [
+                        "--config",
+                        str(config_path),
+                        "--epochs",
+                        "2",
+                        "--batch",
+                        "4",
+                        "--model",
+                        "yolo11s.pt",
+                        "--no-archive",
+                        "--dry-run",
+                    ]
+                )
+
+            self.assertEqual(code, 0)
+            self.assertEqual(captured["config"].epochs, 2)
+            self.assertEqual(captured["config"].batch, 4.0)
+            self.assertEqual(captured["config"].model, "yolo11s.pt")
+            self.assertFalse(captured["config"].archive_weights)
+            self.assertTrue(captured["kwargs"]["dry_run"])
+
+    def test_model_train_compat_entry_points_to_train_cli(self) -> None:
+        self.assertIs(model_train_main, train_main)
 
     def test_results_csv_summary_and_plot(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
