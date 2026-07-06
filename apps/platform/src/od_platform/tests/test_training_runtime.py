@@ -11,6 +11,8 @@ from od_platform.cli.train_model import main as train_main
 from od_platform.runtime_config.generator import write_train_template
 from od_platform.runtime_config.loaders import load_train_config
 from od_platform.runtime_config.train import YOLOTrainConfig
+from od_platform.training.metrics import summarize_results_csv, write_metrics_summary
+from od_platform.training.plots import plot_training_results
 from od_platform.training.service import (
     archive_model_weights,
     build_training_run_plan,
@@ -38,7 +40,7 @@ class TestTrainingRuntime(unittest.TestCase):
 
         kwargs = config.to_ultralytics_kwargs()
 
-        self.assertEqual(kwargs["model"], "yolo11n.pt")
+        self.assertNotIn("model", kwargs)
         self.assertTrue(kwargs["cos_lr"])
         self.assertNotIn("archive_weights", kwargs)
         self.assertNotIn("copy_archive", kwargs)
@@ -105,17 +107,29 @@ class TestTrainingRuntime(unittest.TestCase):
             dataset_yaml.parent.mkdir(parents=True)
             dataset_yaml.write_text("path: dataset\ntrain: train/images\nval: val/images\nnc: 1\nnames: [ship]\n", encoding="utf-8")
             observed: dict[str, bool] = {}
+            test_case = self
 
             class FakeYOLO:
                 def __init__(self, _model: str) -> None:
                     pass
 
                 def train(self, **kwargs) -> None:
+                    test_case.assertNotIn("model", kwargs)
                     run_dir = Path(kwargs["project"]) / kwargs["name"]
                     observed["precreated"] = run_dir.exists()
                     (run_dir / "weights").mkdir(parents=True)
                     (run_dir / "weights" / "best.pt").write_bytes(b"best")
                     (run_dir / "weights" / "last.pt").write_bytes(b"last")
+                    (run_dir / "results.csv").write_text(
+                        "\n".join(
+                            [
+                                "epoch,time,train/box_loss,train/cls_loss,train/dfl_loss,metrics/precision(B),metrics/recall(B),metrics/mAP50(B),metrics/mAP50-95(B),val/box_loss,val/cls_loss,val/dfl_loss,lr/pg0,lr/pg1,lr/pg2",
+                                "1,1.0,1.0,2.0,3.0,0.1,0.2,0.3,0.4,1.1,2.1,3.1,0.001,0.001,0.001",
+                                "2,2.5,0.8,1.8,2.8,0.5,0.6,0.7,0.8,0.9,1.9,2.9,0.0005,0.0005,0.0005",
+                            ]
+                        ),
+                        encoding="utf-8",
+                    )
 
             fake_ultralytics = types.SimpleNamespace(YOLO=FakeYOLO, __version__="test")
             with self._patch_runtime_paths(root), patch.dict(sys.modules, {"ultralytics": fake_ultralytics}):
@@ -124,6 +138,8 @@ class TestTrainingRuntime(unittest.TestCase):
             self.assertFalse(observed["precreated"])
             self.assertTrue(result.manifest_path.exists())
             self.assertEqual(set(result.archived_weights), {"best", "last"})
+            self.assertTrue((result.plan.source_run_dir / "training_metrics.json").exists())
+            self.assertTrue((result.plan.source_run_dir / "training_results.png").exists())
 
     def test_generator_loader_and_cli_dry_run(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -143,6 +159,30 @@ class TestTrainingRuntime(unittest.TestCase):
                 code = train_main(["--config", str(config_path), "--dry-run", "--executor", "tester"])
 
             self.assertEqual(code, 0)
+
+    def test_results_csv_summary_and_plot(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            csv_path = root / "results.csv"
+            csv_path.write_text(
+                "\n".join(
+                    [
+                        "epoch,time,train/box_loss,train/cls_loss,train/dfl_loss,metrics/precision(B),metrics/recall(B),metrics/mAP50(B),metrics/mAP50-95(B),val/box_loss,val/cls_loss,val/dfl_loss,lr/pg0,lr/pg1,lr/pg2",
+                        "1,1.0,1.0,2.0,3.0,0.1,0.2,0.3,0.4,1.1,2.1,3.1,0.001,0.001,0.001",
+                        "2,2.5,0.8,1.8,2.8,0.5,0.6,0.7,0.8,0.9,1.9,2.9,0.0005,0.0005,0.0005",
+                    ]
+                ),
+                encoding="utf-8",
+            )
+
+            summary = summarize_results_csv(csv_path)
+            summary_path = write_metrics_summary(csv_path, root / "summary.json")
+            figure_path = plot_training_results(csv_path, root / "figure.png")
+
+            self.assertEqual(summary["epochs"], 2)
+            self.assertEqual(summary["last"]["map50_95"], 0.8)
+            self.assertTrue(summary_path.exists())
+            self.assertTrue(figure_path.exists())
 
 
 if __name__ == "__main__":

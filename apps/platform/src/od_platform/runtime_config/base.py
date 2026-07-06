@@ -12,7 +12,7 @@ class BaseRuntimeConfig(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
 
-    FRAMEWORK_ONLY_FIELDS: ClassVar[set[str]] = {"extra_args"}
+    FRAMEWORK_ONLY_FIELDS: ClassVar[set[str]] = {"extra_args", "model"}
 
     model: str = Field(default="yolo11n.pt", description="Model path or model name.")
     data: str = Field(default="rsod", description="Dataset yaml name or path.")

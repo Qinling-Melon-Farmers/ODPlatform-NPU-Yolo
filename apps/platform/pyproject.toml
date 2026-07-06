@@ -25,6 +25,8 @@ classifiers = [
 ]
 dependencies = [
     "colorlog>=6.10.1",
+    "matplotlib>=3.8.0",
+    "matplotx>=0.3.10",
     "pydantic>=2.0.0",
     "psutil>=7.2.2",
     "pyyaml>=6.0.0",
@@ -47,6 +49,8 @@ odp-transform = "od_platform.cli.transform_data:main"
 odp-validate = "od_platform.cli.validate_data:main"
 odp-gen-config = "od_platform.runtime_config.generator:main"
 odp-train = "od_platform.cli.train_model:main"
+odp-plot-training = "od_platform.cli.plot_training:main"
+odp-import-dataset = "od_platform.cli.import_dataset:main"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/od_platform"]

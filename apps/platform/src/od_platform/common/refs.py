@@ -29,3 +29,20 @@ def resolve_dataset(ref: str) -> Path:
 def resolve_yaml(ref: str) -> Path:
     """Resolve a dataset config name or yaml path."""
     return resolve_ref(ref, base_dir=paths.DATASET_CONFIGS_DIR, default_suffix=".yaml")
+
+
+def resolve_model(ref: str) -> Path:
+    """Resolve a model name or path.
+
+    Plain filenames are looked up below ``models/pretrained`` first. If the
+    file is not present, the original model reference is returned so
+    Ultralytics can still resolve official model names such as ``yolo11n.pt``.
+    """
+    path = Path(ref)
+    if path.is_absolute() or len(path.parts) > 1:
+        return path.resolve()
+
+    candidate = paths.PRETRAINED_MODELS_DIR / path.name
+    if candidate.exists():
+        return candidate.resolve()
+    return path

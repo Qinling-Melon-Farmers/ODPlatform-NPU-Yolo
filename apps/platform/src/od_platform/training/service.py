@@ -14,9 +14,15 @@ from typing import Any
 import yaml
 
 from od_platform.common import paths
-from od_platform.common.refs import resolve_yaml
+from od_platform.common.refs import resolve_model, resolve_yaml
 from od_platform.common.system_utils import get_basic_device_info
 from od_platform.runtime_config.train import YOLOTrainConfig
+from od_platform.training.metrics import (
+    log_metrics_summary,
+    summarize_results_csv,
+    write_metrics_summary,
+)
+from od_platform.training.plots import plot_training_results
 
 logger = logging.getLogger(__name__)
 
@@ -80,16 +86,18 @@ def run_training(
     plan = build_training_run_plan(config)
     run_logger = _configure_training_logger(plan.log_file)
     dataset_yaml = resolve_yaml(config.data)
+    model_ref = resolve_model(config.model)
     dataset_summary = summarize_dataset(dataset_yaml)
 
     run_logger.info("training run: %s", plan.archive_run_name)
     run_logger.info("executor: %s", executor or "unknown")
     run_logger.info("config source: %s", config_source or "direct object")
     run_logger.info("dataset yaml: %s", dataset_yaml)
+    run_logger.info("model ref: %s", model_ref)
     run_logger.info("dataset summary: %s", json.dumps(dataset_summary, ensure_ascii=False, sort_keys=True))
     run_logger.info("ultralytics output: %s", plan.source_run_dir)
     run_logger.info("model archive root: %s", plan.archive_root)
-    run_logger.info("runtime config: %s", json.dumps(config.audit_snapshot(), ensure_ascii=False, sort_keys=True))
+    _log_effective_config(config, run_logger, config_source=config_source)
 
     manifest_path: Path | None = None
     if dry_run:
@@ -115,9 +123,10 @@ def run_training(
         run_logger.info("start ultralytics training")
         from ultralytics import YOLO
 
-        model = YOLO(config.model)
+        model = YOLO(str(model_ref))
         model.train(**kwargs)
         run_logger.info("ultralytics training finished")
+        training_outputs = inspect_training_outputs(plan.source_run_dir, task=config.task, target_logger=run_logger)
         manifest_path = write_training_manifest(
             plan,
             config,
@@ -125,6 +134,7 @@ def run_training(
             executor=executor,
             dataset_summary=dataset_summary,
             dry_run=False,
+            training_outputs=training_outputs,
         )
         if config.archive_weights:
             archived = archive_model_weights(
@@ -151,6 +161,7 @@ def write_training_manifest(
     executor: str | None,
     dataset_summary: dict[str, Any] | None = None,
     dry_run: bool = False,
+    training_outputs: dict[str, Any] | None = None,
 ) -> Path:
     """Write a machine-readable training manifest next to the run output."""
     plan.source_run_dir.mkdir(parents=True, exist_ok=True)
@@ -169,9 +180,43 @@ def write_training_manifest(
             "log_file": str(plan.log_file),
             "archive_root": str(plan.archive_root),
         },
+        "training_outputs": training_outputs or inspect_training_outputs(plan.source_run_dir, task=config.task),
     }
     output = plan.source_run_dir / "training_manifest.json"
     output.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
+    return output
+
+
+def inspect_training_outputs(
+    run_dir: Path,
+    *,
+    task: str,
+    target_logger: logging.Logger | None = None,
+) -> dict[str, Any]:
+    """Inspect results.csv and produce summary/figure files when available."""
+    results_csv = run_dir / "results.csv"
+    output: dict[str, Any] = {"results_csv": str(results_csv), "results_csv_exists": results_csv.exists()}
+    if not results_csv.exists():
+        return output
+
+    try:
+        summary = summarize_results_csv(results_csv, task=task)
+        summary_path = write_metrics_summary(results_csv, run_dir / "training_metrics.json", task=task)
+        output["metrics_summary"] = summary
+        output["metrics_summary_path"] = str(summary_path)
+        log_metrics_summary(summary, target_logger=target_logger)
+    except Exception as exc:
+        output["metrics_error"] = f"{type(exc).__name__}: {exc}"
+        if target_logger is not None:
+            target_logger.warning("training metrics summary failed: %s", exc)
+
+    try:
+        figure_path = plot_training_results(results_csv, run_dir / "training_results.png")
+        output["figure_path"] = str(figure_path)
+    except Exception as exc:
+        output["figure_error"] = f"{type(exc).__name__}: {exc}"
+        if target_logger is not None:
+            target_logger.warning("training plot failed: %s", exc)
     return output
 
 
@@ -271,6 +316,15 @@ def _configure_training_logger(log_file: Path) -> logging.Logger:
     stream_handler.setFormatter(formatter)
     run_logger.addHandler(stream_handler)
     return run_logger
+
+
+def _log_effective_config(config: YOLOTrainConfig, target_logger: logging.Logger, *, config_source: Path | None) -> None:
+    target_logger.info("=" * 60)
+    target_logger.info("effective training config")
+    source = str(config_source) if config_source else "default/direct"
+    for field_name in config.__class__.model_fields:
+        target_logger.info("%-20s: %s (source: %s)", field_name, getattr(config, field_name, None), source)
+    target_logger.info("=" * 60)
 
 
 def _close_logger(run_logger: logging.Logger) -> None:
