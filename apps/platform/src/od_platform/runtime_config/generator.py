@@ -10,6 +10,7 @@ from typing import Any
 import yaml
 
 from od_platform.common import paths
+from od_platform.runtime_config.registry import CONFIG_REGISTRY
 
 
 def default_train_config() -> dict[str, Any]:
@@ -54,6 +55,34 @@ def default_infer_config() -> dict[str, Any]:
     }
 
 
+def default_val_config() -> dict[str, Any]:
+    """Return a conservative val.yaml template."""
+    return {
+        "model": "models/checkpoints/train3-20250704-165500-yolo11n-best.pt",
+        "data": "rsod",
+        "task": "detect",
+        "split": "val",
+        "batch": 16,
+        "imgsz": 640,
+        "workers": 8,
+        "device": 0,
+        "conf": 0.001,
+        "iou": 0.6,
+        "max_det": 300,
+        "half": True,
+        "plots": True,
+        "save_json": True,
+        "save_hybrid": False,
+    }
+
+
+DEFAULT_CONFIGS: dict[str, Any] = {
+    "train": default_train_config,
+    "val": default_val_config,
+    "infer": default_infer_config,
+}
+
+
 def write_train_template(path: Path | None = None, *, overwrite: bool = False) -> Path:
     """Write the default training runtime config."""
     target = path or paths.runtime_config_path("train")
@@ -80,9 +109,37 @@ def write_infer_template(path: Path | None = None, *, overwrite: bool = False) -
     return target
 
 
+def write_val_template(path: Path | None = None, *, overwrite: bool = False) -> Path:
+    """Write the default validation runtime config."""
+    target = path or paths.runtime_config_path("val")
+    target.parent.mkdir(parents=True, exist_ok=True)
+    if target.exists() and not overwrite:
+        raise FileExistsError(f"runtime config already exists: {target}")
+    target.write_text(
+        yaml.safe_dump(default_val_config(), allow_unicode=True, sort_keys=False),
+        encoding="utf-8",
+    )
+    return target
+
+
+class ConfigGenerator:
+    """Generate editable runtime config templates by registered name."""
+
+    def generate(self, name: str, path: Path | None = None, *, overwrite: bool = False) -> Path:
+        if name not in DEFAULT_CONFIGS:
+            raise ValueError(f"unknown runtime config {name!r}, expected one of {sorted(CONFIG_REGISTRY)}")
+        target = path or paths.runtime_config_path(name)
+        target.parent.mkdir(parents=True, exist_ok=True)
+        if target.exists() and not overwrite:
+            raise FileExistsError(f"runtime config already exists: {target}")
+        data = DEFAULT_CONFIGS[name]()
+        target.write_text(yaml.safe_dump(data, allow_unicode=True, sort_keys=False), encoding="utf-8")
+        return target
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="odp-gen-config", description="Generate ODPlatform runtime config templates.")
-    parser.add_argument("name", nargs="?", default="train", choices=("train", "infer"), help="Template name.")
+    parser.add_argument("name", nargs="?", default="train", choices=tuple(CONFIG_REGISTRY), help="Template name.")
     parser.add_argument("--output", "-o", type=Path, help="Output yaml path.")
     parser.add_argument("--force", action="store_true", help="Overwrite existing file.")
     return parser
@@ -92,10 +149,7 @@ def main(argv: list[str] | None = None) -> int:
     parser = build_parser()
     args = parser.parse_args(argv)
     try:
-        if args.name == "train":
-            write_train_template(args.output, overwrite=args.force)
-        elif args.name == "infer":
-            write_infer_template(args.output, overwrite=args.force)
+        ConfigGenerator().generate(args.name, args.output, overwrite=args.force)
         return 0
     except Exception as exc:
         parser.error(str(exc))

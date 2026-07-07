@@ -2,9 +2,11 @@
 
 from __future__ import annotations
 
+from collections import OrderedDict
 from typing import Any, ClassVar
 
 from pydantic import BaseModel, ConfigDict, Field
+from pydantic_core import PydanticUndefined
 
 
 class BaseRuntimeConfig(BaseModel):
@@ -42,3 +44,29 @@ class BaseRuntimeConfig(BaseModel):
     def audit_snapshot(self) -> dict[str, Any]:
         """Return a JSON-serializable snapshot for logs and manifests."""
         return self.model_dump(mode="json", exclude_none=True)
+
+    def get_field_groups(self) -> dict[str, list[str]]:
+        """Group field names by optional json_schema_extra['group'] metadata."""
+        groups: OrderedDict[str, list[str]] = OrderedDict()
+        for name, field in self.__class__.model_fields.items():
+            extra = field.json_schema_extra if isinstance(field.json_schema_extra, dict) else {}
+            group = str(extra.get("group") or "runtime")
+            groups.setdefault(group, []).append(name)
+        return dict(groups)
+
+    def get_field_metadata(self, field_name: str) -> dict[str, Any]:
+        """Return generator-friendly metadata for one Pydantic field."""
+        field = self.__class__.model_fields[field_name]
+        extra = field.json_schema_extra if isinstance(field.json_schema_extra, dict) else {}
+        if field.default is not PydanticUndefined:
+            default = field.default
+        else:
+            default = getattr(self, field_name, None)
+        return {
+            "description": field.description or "",
+            "default": default,
+            "examples": extra.get("examples", []),
+            "tips": extra.get("tips", []),
+            "yaml_comment": extra.get("yaml_comment") or field.description or field_name,
+            "group": extra.get("group") or "runtime",
+        }
