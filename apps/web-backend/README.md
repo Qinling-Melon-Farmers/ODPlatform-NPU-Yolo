@@ -1,35 +1,21 @@
-# Web Backend 端（占位）
+# Web Backend 端
 
-| 属性 | 值 |
-|------|-----|
-| **状态** | Placeholder（占位，未启动） |
-| **所属** | ODPlatform · apps/web-backend |
+`apps/web-backend` 是后续 Web 服务端的占位目录。当前项目能力集中在 `apps/platform`，Web 后端尚未正式开发。
 
----
+## 预期职责
 
-## 用途
+- 对外提供 REST / WebSocket API。
+- 调用 `od_platform.inference` 提供在线推理能力。
+- 调用 `od_platform.data_validation` 提供数据质检任务接口。
+- 管理训练、推理、数据转换任务的队列和状态。
 
-未来将承载 ODPlatform 的网页后端服务，提供：
+## 当前约束
 
-- HTTP API 接口（REST / WebSocket）
-- 在线推理服务（调用 platform 引擎）
-- 用户管理、任务队列等业务逻辑
-
----
-
-## 依赖
-
-- `od_platform`（通过 `pip install -e ../platform` 在同一环境中复用）
-
----
-
-## 未来计划
-
-V1.1+ 启动实际开发。当前仅预留目录位置，保证 Monorepo 架构的完整性。
-
----
+- 不在 Web 后端重复实现数据转换、质检、训练或推理逻辑。
+- 正式开发前只保留 README 和必要占位结构。
+- 后续应通过可安装的 `od_platform` 包复用 platform 端能力。
 
 ## 参考
 
-- [ADR-001 Monorepo 决策](../../../docs/architecture/ADR-001-monorepo.md)
-- [platform 端 README](../platform/README.md)
+- [Platform README](../platform/README.md)
+- [ADR-001 Monorepo 决策](../../docs/architecture/ADR-001-monorepo.md)

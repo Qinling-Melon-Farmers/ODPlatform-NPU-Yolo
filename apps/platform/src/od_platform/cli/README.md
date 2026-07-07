@@ -1,37 +1,46 @@
 # ODPlatform CLI
 
-## odp-init
+本目录提供 `od_platform` 的命令行入口。正式脚本入口定义在 `apps/platform/pyproject.toml` 的 `[project.scripts]` 中。
 
-初始化 ODPlatform 运行时目录：
+## 命令一览
+
+| 命令 | 入口 | 用途 |
+| --- | --- | --- |
+| `odp-init` | `od_platform.cli.init_project:initialize_project` | 初始化运行目录 |
+| `odp-reset` | `od_platform.cli.reset_project:main` | 安全清理运行产物 |
+| `odp-import-dataset` | `od_platform.cli.import_dataset:main` | 导入数据集压缩包 |
+| `odp-transform` | `od_platform.cli.transform_data:main` | 数据转换和划分 |
+| `odp-validate` | `od_platform.cli.validate_data:main` | 数据质量检查 |
+| `odp-gen-config` | `od_platform.runtime_config.generator:main` | 生成运行配置 |
+| `odp-train` | `od_platform.cli.train_model:main` | 训练模型 |
+| `odp-infer` | `od_platform.cli.infer_model:main` | 推理 |
+| `odp-plot-training` | `od_platform.cli.plot_training:main` | 绘制训练结果 |
+
+## 常用示例
 
 ```powershell
 odp-init
-```
-
-开发期也可以直接运行：
-
-```powershell
-python scripts/init_project.py
-```
-
-## odp-reset
-
-安全清理运行时产物，默认 dry-run，不会删除文件：
-
-```powershell
 odp-reset
-```
-
-真实执行需要显式确认：
-
-```powershell
-odp-reset --yes
-```
-
-CI 场景可跳过交互确认：
-
-```powershell
 odp-reset --yes --force
+
+odp-import-dataset "C:\path\steel surface defect.v1i.voc.zip" --name steel-surface-defect
+odp-transform --dataset steel-surface-defect --format pascal_voc --task detect
+odp-validate --dataset steel-surface-defect --executor your-name
+
+odp-gen-config train --force
+odp-train --yaml train --data steel-surface-defect --model yolo11n.pt --epochs 100 --batch 16 --imgsz 640 --device 0
+
+odp-gen-config infer --force
+odp-infer --config infer
 ```
 
-reset 的安全设计见 [ADR-002](../../../../../docs/architecture/ADR-002-reset-safety-design.md)，操作指引见 [reset_project 运维手册](../../../../../docs/ops/reset-project-runbook.md)。
+## 日志与返回码
+
+- 终端日志由 `common.logging_utils.get_logger()` 统一配置，使用彩色输出。
+- 文件日志保持纯文本，便于归档和排查。
+- `odp-reset` 默认 dry-run，只有显式 `--yes` 才会删除运行产物。
+- `odp-validate` 返回 CI 可用退出码：通过、警告、数据错误、工具错误。
+
+## 兼容说明
+
+`od_platform.cli.model_train` 仅作为旧带教脚本兼容入口保留。新代码和文档应使用 `od_platform.cli.train_model`。

@@ -1,54 +1,39 @@
 # 数据目录
 
-| 属性 | 值 |
-|------|-----|
-| **状态** | Active |
-| **所属** | ODPlatform 顶层共享资产 |
-
----
+`data/` 存放数据集输入和由流水线生成的数据集产物。真实图像、标注和大文件不进入 Git。
 
 ## 目录结构
 
-```
+```text
 data/
-├── raw/                       ← 原始数据（只读，绝不就地修改）
-│   └── yolo_staged_labels/    ← YOLO 格式标注暂存区
-├── train/                     ← 训练集（由 raw 经固定种子一次性划分产出）
-│   ├── images/
-│   └── annotations/
-├── val/                       ← 验证集
-│   ├── images/
-│   └── annotations/
-└── test/                      ← 测试集
-    ├── images/
-    └── annotations/
+├── raw/                         # 原始数据集，只读输入
+│   └── <dataset>/
+│       ├── images/
+│       └── annotations/
+├── processed/                   # 转换、划分后的数据集产物
+│   └── <dataset>/
+│       ├── train/images/
+│       ├── train/labels/
+│       ├── val/images/
+│       ├── val/labels/
+│       ├── test/images/
+│       └── test/labels/
+└── README.md
 ```
 
----
+## 使用方式
 
-## 使用规范
-
-1. **原始数据只读**：`raw/` 下的数据**绝不**就地修改。所有清洗、转换、划分操作产出新文件，写入 `train/` / `val/` / `test/` 或 `processed/`。
-2. **固定种子划分**：训练/验证/测试集的划分**一次性**完成并冻结，训练时只读那份固定划分，不每次临时分。
-3. **不进 Git**：`data/` 下的图像、标注、大文件均被 `.gitignore` 排除，仅 `README.md` 进入版本库。
-
----
-
-## 如何放入数据
-
-在 `data/raw/` 下以**数据集名称**创建子文件夹，结构如下：
-
-```
-data/raw/<dataset_name>/
-├── images/          ← 图片文件
-└── annotations/     ← 标注文件
+```powershell
+odp-import-dataset "C:\path\dataset.voc.zip" --name steel-surface-defect
+odp-transform --dataset steel-surface-defect --format pascal_voc --task detect
+odp-validate --dataset steel-surface-defect --executor your-name
 ```
 
-放入后运行 `odp-init`，系统会列出已发现的数据集目录。
+`odp-transform` 会把可训练数据集写入 `data/processed/<dataset>/`，并生成对应的 dataset YAML 到 `apps/platform/configs/datasets/`。
 
----
+## 规范
 
-## 参考
-
-- [D0 设计指南 §6.5 "原始数据放哪"](../../D0-设计指南.md)
-- [.gitignore](../../.gitignore)
+- `data/raw/` 只读，不在原地清洗或修改。
+- `data/processed/` 是可再生产物，可由命令重新生成。
+- 图片、标注、大文件不进 Git，仅 README 进入版本库。
+- 数据划分应固定随机种子，保证训练、验证、测试集可复现。

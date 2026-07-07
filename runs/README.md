@@ -1,37 +1,27 @@
-# 训练运行产物目录
+# 运行产物目录
 
-| 属性 | 值 |
-|------|-----|
-| **状态** | Active |
-| **所属** | ODPlatform 顶层共享资产（过程现场） |
+`runs/` 存放训练、推理、数据质检等命令产生的运行现场。除本 README 外，运行产物不进入 Git。
 
----
+## 常见结构
 
-## 用途
+```text
+runs/
+├── detect/                       # Ultralytics 训练输出
+│   └── <train-name>/
+├── inference/                    # 推理输出、manifest、summary
+│   └── detect/
+├── data_validation/              # 数据质检报告
+│   └── <run_id>/
+│       ├── report.json
+│       ├── report.md
+│       ├── report.html
+│       └── rework.csv
+└── README.md
+```
 
-存放**每一次训练运行**的完整现场记录：
+## 规范
 
-- 训练日志（loss 曲线、mAP 变化）
-- 中间检查点（checkpoint）
-- 配置文件快照
-- 评估指标报告
-
----
-
-## 使用规范
-
-1. 每次训练自动在此创建新子目录（按时间戳或实验名区分）
-2. 从 `runs/` 中挑选效果最好的权重，**复制**到 `models/trained/` 长期保存
-3. `runs/` 中的内容可以定期清理（失了可以从代码 + 数据重新生成）
-
----
-
-## 不进 Git
-
-`runs/` 下所有内容被 `.gitignore` 排除，仅此 README 进入版本库。
-
----
-
-## 参考
-
-- [models/trained/README.md](../models/trained/README.md) — 训练产出的精选权重（成品）
+- `runs/` 是过程现场，可以清理后重新生成。
+- 训练结束后需要长期保留的权重会归档到 `models/trained/`。
+- 数据质检报告可用于提交、复查和返工，但默认不进入 Git。
+- `odp-reset` 会安全清理运行产物；默认 dry-run，只有显式 `--yes` 才执行删除。

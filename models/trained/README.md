@@ -1,36 +1,27 @@
 # 训练产出模型目录
 
-| 属性 | 值 |
-|------|-----|
-| **状态** | Active |
-| **所属** | ODPlatform 顶层共享资产（产物） |
+`models/trained/` 存放从训练运行中归档出来、准备长期保留的模型权重。
 
----
+## 当前归档方式
 
-## 用途
+`odp-train` 训练结束后会从实际 Ultralytics 输出目录读取 `weights/best.pt` 和 `weights/last.pt`，并归档为带运行编号、时间戳和模型名的文件。
 
-存放**你训练产出、决定长期保留**的模型权重文件（如 `best.pt`、`last.pt`）。
+示例：
 
-这些是"产物"——从训练流程生成、可被删除后重新训练再生。
+```text
+models/trained/
+└── train-4-20260707-150257-yolo11n-best.pt
+└── train-4-20260707-150257-yolo11n-last.pt
+```
 
----
+## 规范
 
-## 与 runs/ 的分工
+- 权重文件不进入 Git。
+- `best.pt` 通常用于推理和评估。
+- `last.pt` 通常用于断点续训或复现实验末态。
+- 归档元数据和训练 manifest 以 `runs/` 中的运行目录为准。
 
-| 目录 | 存放内容 |
-|------|---------|
-| `runs/` | **每一次**训练的全部痕迹（日志、曲线、检查点），数量越来越多 |
-| `models/trained/` | 从 runs/ 中**挑选出来、要长期使用**的几个权重 |
+## 相关目录
 
----
-
-## 不进 Git
-
-所有 `.pt` 文件被 `.gitignore` 排除，不会进入版本库。
-
----
-
-## 参考
-
-- [pretrained/README.md](../pretrained/README.md) — 下载来的预训练权重（输入）
-- [runs/README.md](../../runs/README.md) — 每一次训练的完整现场（过程）
+- `runs/`：每次训练的完整现场。
+- `models/pretrained/`：外部预训练权重。
