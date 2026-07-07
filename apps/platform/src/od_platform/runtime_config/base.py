@@ -34,6 +34,9 @@ class BaseRuntimeConfig(BaseModel):
         payload = self.model_dump(exclude_none=True)
         for key in self.FRAMEWORK_ONLY_FIELDS:
             payload.pop(key, None)
+        batch = payload.get("batch")
+        if isinstance(batch, float) and batch.is_integer():
+            payload["batch"] = int(batch)
         return payload
 
     def audit_snapshot(self) -> dict[str, Any]:

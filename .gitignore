@@ -90,3 +90,6 @@ temp/
 *.pkl
 *.h5
 *.npz
+
+# YOLO pretrained weights downloaded to the repository root during local training
+/yolo*.pt

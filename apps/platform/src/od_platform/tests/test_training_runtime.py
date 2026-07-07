@@ -43,6 +43,7 @@ class TestTrainingRuntime(unittest.TestCase):
 
         self.assertNotIn("model", kwargs)
         self.assertTrue(kwargs["cos_lr"])
+        self.assertIsInstance(kwargs["batch"], int)
         self.assertNotIn("archive_weights", kwargs)
         self.assertNotIn("copy_archive", kwargs)
         self.assertNotIn("extra_args", kwargs)
@@ -208,7 +209,7 @@ class TestTrainingRuntime(unittest.TestCase):
 
             self.assertEqual(code, 0)
             self.assertEqual(captured["config"].epochs, 2)
-            self.assertEqual(captured["config"].batch, 4.0)
+            self.assertEqual(captured["config"].batch, 4)
             self.assertEqual(captured["config"].model, "yolo11s.pt")
             self.assertFalse(captured["config"].archive_weights)
             self.assertTrue(captured["kwargs"]["dry_run"])

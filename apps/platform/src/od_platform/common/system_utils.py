@@ -121,7 +121,8 @@ def get_basic_device_info() -> dict:
             gpu_info["GPU 数量"] = gpu_count
             for i in range(gpu_count):
                 gpu_info[f"GPU {i} 型号"] = torch.cuda.get_device_name(i)
-                total_mem = torch.cuda.get_device_properties(i).total_mem
+                properties = torch.cuda.get_device_properties(i)
+                total_mem = getattr(properties, "total_memory", getattr(properties, "total_mem", None))
                 gpu_info[f"GPU {i} 显存"] = _format_size(total_mem)
         else:
             gpu_info["GPU 数量"] = 0

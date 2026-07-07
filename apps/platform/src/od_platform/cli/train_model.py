@@ -22,7 +22,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--model", help="Override model path or model name.")
     parser.add_argument("--data", help="Override dataset yaml name or path.")
     parser.add_argument("--epochs", type=int, help="Override training epochs.")
-    parser.add_argument("--batch", type=float, help="Override batch size.")
+    parser.add_argument("--batch", type=int, help="Override batch size.")
     parser.add_argument("--imgsz", type=int, help="Override image size.")
     parser.add_argument("--device", help="Override training device, such as 0, cpu or 0,1.")
     parser.add_argument("--lr0", type=float, help="Override initial learning rate.")
