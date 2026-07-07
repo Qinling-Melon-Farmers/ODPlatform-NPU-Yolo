@@ -4,6 +4,7 @@ from pathlib import Path
 from od_platform.common.paths import (
     APP_DIR,
     DATA_DIR,
+    INFERENCE_RUNS_DIR,
     LOGGING_DIR,
     META_LOGGING_DIR,
     MODELS_DIR,
@@ -47,10 +48,11 @@ class TestPaths(unittest.TestCase):
     def test_reset_dirs_are_runtime_allowlist(self) -> None:
         dirs = get_dirs_to_reset()
         self.assertIsInstance(dirs, list)
-        self.assertEqual(len(dirs), 7)
+        self.assertEqual(len(dirs), 8)
         self.assertIn(RUNS_DIR, dirs)
         self.assertIn(LOGGING_DIR, dirs)
         self.assertIn(VALIDATION_RUNS_DIR, dirs)
+        self.assertIn(INFERENCE_RUNS_DIR, dirs)
         self.assertNotIn(RAW_DATA_DIR, dirs)
         self.assertNotIn(PRETRAINED_MODELS_DIR, dirs)
         self.assertNotIn(META_LOGGING_DIR, dirs)

@@ -34,7 +34,7 @@ def resolve_yaml(ref: str) -> Path:
 def resolve_model(ref: str) -> Path:
     """Resolve a model name or path.
 
-    Plain filenames are looked up below ``models/pretrained`` first. If the
+    Plain filenames are looked up below model asset directories first. If the
     file is not present, the original model reference is returned so
     Ultralytics can still resolve official model names such as ``yolo11n.pt``.
     """
@@ -42,7 +42,13 @@ def resolve_model(ref: str) -> Path:
     if path.is_absolute() or len(path.parts) > 1:
         return path.resolve()
 
-    candidate = paths.PRETRAINED_MODELS_DIR / path.name
-    if candidate.exists():
-        return candidate.resolve()
+    for base_dir in (
+        paths.CHECKPOINTS_DIR,
+        paths.TRAINED_MODELS_DIR,
+        paths.PRETRAINED_MODELS_DIR,
+        paths.ROOT_DIR,
+    ):
+        candidate = base_dir / path.name
+        if candidate.exists():
+            return candidate.resolve()
     return path

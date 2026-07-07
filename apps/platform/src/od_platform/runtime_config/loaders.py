@@ -8,6 +8,7 @@ from typing import Any
 import yaml
 
 from od_platform.common import paths
+from od_platform.runtime_config.infer import YOLOInferConfig
 from od_platform.runtime_config.train import YOLOTrainConfig
 
 
@@ -33,3 +34,8 @@ def load_yaml_dict(path: Path) -> dict[str, Any]:
 def load_train_config(ref: str | Path) -> YOLOTrainConfig:
     """Load and validate one YOLO training config."""
     return YOLOTrainConfig.model_validate(load_yaml_dict(resolve_runtime_config(ref)))
+
+
+def load_infer_config(ref: str | Path) -> YOLOInferConfig:
+    """Load and validate one YOLO inference config."""
+    return YOLOInferConfig.model_validate(load_yaml_dict(resolve_runtime_config(ref)))
