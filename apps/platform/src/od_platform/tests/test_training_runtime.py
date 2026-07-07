@@ -82,6 +82,25 @@ class TestTrainingRuntime(unittest.TestCase):
             self.assertEqual(plan.ultralytics_project, (root / "custom_runs").resolve())
             self.assertEqual(plan.source_run_dir, (root / "custom_runs").resolve() / "steel-baseline")
 
+    def test_build_training_run_plan_avoids_existing_custom_name(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            (root / "custom_runs" / "steel-baseline").mkdir(parents=True)
+            with self._patch_runtime_paths(root):
+                plan = build_training_run_plan(
+                    YOLOTrainConfig(
+                        data="rsod",
+                        model="yolo11n.pt",
+                        project=str(root / "custom_runs"),
+                        name="steel-baseline",
+                    ),
+                    now=datetime(2026, 7, 7, 13, 30, 0),
+                )
+
+            self.assertEqual(plan.source_run_name, "steel-baseline-2")
+            self.assertEqual(plan.source_run_dir, (root / "custom_runs").resolve() / "steel-baseline-2")
+            self.assertEqual(plan.archive_run_name, "steel-baseline-2-20260707-133000-yolo11n")
+
     def test_archive_model_weights_copies_best_and_last(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             root = Path(temp_dir)
@@ -160,6 +179,45 @@ class TestTrainingRuntime(unittest.TestCase):
             self.assertEqual(set(result.archived_weights), {"best", "last"})
             self.assertTrue((result.plan.source_run_dir / "training_metrics.json").exists())
             self.assertTrue((result.plan.source_run_dir / "training_results.png").exists())
+
+    def test_real_run_uses_actual_ultralytics_save_dir_for_archive(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            dataset_yaml = root / "apps" / "platform" / "configs" / "datasets" / "rsod.yaml"
+            dataset_yaml.parent.mkdir(parents=True)
+            dataset_yaml.write_text("path: dataset\ntrain: train/images\nval: val/images\nnc: 1\nnames: [ship]\n", encoding="utf-8")
+
+            class FakeYOLO:
+                def __init__(self, _model: str) -> None:
+                    pass
+
+                def train(self, **kwargs):
+                    planned = Path(kwargs["project"]) / kwargs["name"]
+                    actual = planned.with_name(f"{planned.name}-2")
+                    (actual / "weights").mkdir(parents=True)
+                    (actual / "weights" / "best.pt").write_bytes(b"best")
+                    (actual / "weights" / "last.pt").write_bytes(b"last")
+                    (actual / "results.csv").write_text(
+                        "\n".join(
+                            [
+                                "epoch,time,train/box_loss,train/cls_loss,train/dfl_loss,metrics/precision(B),metrics/recall(B),metrics/mAP50(B),metrics/mAP50-95(B),val/box_loss,val/cls_loss,val/dfl_loss,lr/pg0,lr/pg1,lr/pg2",
+                                "1,1.0,1.0,2.0,3.0,0.1,0.2,0.3,0.4,1.1,2.1,3.1,0.001,0.001,0.001",
+                            ]
+                        ),
+                        encoding="utf-8",
+                    )
+                    return types.SimpleNamespace(save_dir=actual)
+
+            fake_ultralytics = types.SimpleNamespace(YOLO=FakeYOLO, __version__="test")
+            with self._patch_runtime_paths(root), patch.dict(sys.modules, {"ultralytics": fake_ultralytics}):
+                result = run_training(
+                    YOLOTrainConfig(data="rsod", model="yolo11n.pt", epochs=1, name="steel-baseline"),
+                    dry_run=False,
+                )
+
+            self.assertEqual(result.plan.source_run_name, "steel-baseline-2")
+            self.assertEqual(set(result.archived_weights), {"best", "last"})
+            self.assertTrue(result.archived_weights["best"].exists())
 
     def test_generator_loader_and_cli_dry_run(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:

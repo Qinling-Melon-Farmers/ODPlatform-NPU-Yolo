@@ -6,7 +6,7 @@ import json
 import logging
 import re
 import shutil
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import datetime
 from pathlib import Path
 from typing import Any
@@ -58,9 +58,10 @@ def build_training_run_plan(config: YOLOTrainConfig, *, now: datetime | None = N
     sequence = _next_training_sequence(config.task)
     timestamp = (now or datetime.now()).strftime("%Y%m%d-%H%M%S")
     model_slug = _model_slug(config.model)
-    source_run_name = config.name or f"train-{sequence}"
-    archive_run_name = f"{source_run_name}-{timestamp}-{model_slug}"
     ultralytics_project = Path(config.project).resolve() if config.project else paths.RUNS_DIR / config.task
+    requested_run_name = config.name or f"train-{sequence}"
+    source_run_name = _available_run_name(ultralytics_project, requested_run_name, exist_ok=config.exist_ok)
+    archive_run_name = f"{source_run_name}-{timestamp}-{model_slug}"
     return TrainingRunPlan(
         sequence=sequence,
         timestamp=timestamp,
@@ -124,7 +125,11 @@ def run_training(
         from ultralytics import YOLO
 
         model = YOLO(str(model_ref))
-        model.train(**kwargs)
+        train_result = model.train(**kwargs)
+        actual_run_dir = _resolve_completed_run_dir(plan.source_run_dir, train_result)
+        if actual_run_dir != plan.source_run_dir:
+            run_logger.warning("ultralytics output dir changed: %s -> %s", plan.source_run_dir, actual_run_dir)
+            plan = replace(plan, source_run_name=actual_run_dir.name, source_run_dir=actual_run_dir)
         run_logger.info("ultralytics training finished")
         training_outputs = inspect_training_outputs(plan.source_run_dir, task=config.task, target_logger=run_logger)
         manifest_path = write_training_manifest(
@@ -291,6 +296,50 @@ def _next_training_sequence(task: str) -> int:
             if match:
                 numbers.append(int(match.group(1)))
     return max(numbers, default=0) + 1
+
+
+def _available_run_name(project: Path, requested_name: str, *, exist_ok: bool) -> str:
+    """Return a run name that will not be auto-renamed by Ultralytics."""
+    if exist_ok or not (project / requested_name).exists():
+        return requested_name
+    index = 2
+    while (project / f"{requested_name}-{index}").exists():
+        index += 1
+    return f"{requested_name}-{index}"
+
+
+def _resolve_completed_run_dir(planned_dir: Path, train_result: Any) -> Path:
+    """Resolve the actual Ultralytics output directory after training."""
+    for candidate in _result_run_dir_candidates(train_result):
+        if _has_training_artifacts(candidate):
+            return candidate
+    if _has_training_artifacts(planned_dir):
+        return planned_dir
+    siblings = sorted(
+        planned_dir.parent.glob(f"{planned_dir.name}*"),
+        key=lambda item: item.stat().st_mtime if item.exists() else 0,
+        reverse=True,
+    )
+    for candidate in siblings:
+        if candidate.is_dir() and _has_training_artifacts(candidate):
+            return candidate
+    return planned_dir
+
+
+def _result_run_dir_candidates(train_result: Any) -> list[Path]:
+    candidates: list[Path] = []
+    for value in (
+        getattr(train_result, "save_dir", None),
+        getattr(getattr(train_result, "trainer", None), "save_dir", None),
+        getattr(getattr(train_result, "args", None), "save_dir", None),
+    ):
+        if value is not None:
+            candidates.append(Path(value).resolve())
+    return candidates
+
+
+def _has_training_artifacts(run_dir: Path) -> bool:
+    return (run_dir / "results.csv").exists() or (run_dir / "weights" / "best.pt").exists()
 
 
 def _model_slug(model_name: str) -> str:
