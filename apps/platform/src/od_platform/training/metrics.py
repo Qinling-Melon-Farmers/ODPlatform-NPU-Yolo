@@ -11,6 +11,7 @@ from pathlib import Path
 from typing import Any
 
 from od_platform.common.constants import Task
+from od_platform.common.string_utils import pad_to_width
 
 logger = logging.getLogger(__name__)
 
@@ -126,6 +127,65 @@ def log_metrics_summary(summary: dict[str, Any], *, target_logger: logging.Logge
     log.info("best map50_95: %s", best.get("map50_95"))
 
 
+def log_training_report(
+    summary: dict[str, Any],
+    *,
+    run_dir: Path | None = None,
+    target_logger: logging.Logger | None = None,
+    train_result: Any | None = None,
+    width: int = 60,
+) -> None:
+    """Log a teaching-style training report from CSV summary and optional Ultralytics result."""
+    log = target_logger or logger
+    last = summary.get("last", {})
+    best = summary.get("best", {})
+    loss = summary.get("loss", {})
+    result_metrics = _extract_result_metrics(train_result)
+    task = result_metrics.get("task") or last.get("task") or "unknown"
+
+    _log_section(log, f"训练结果 ({task})", width=width)
+    _log_subtitle(log, "基本信息", width=width)
+    _log_kv(log, "任务类型", task)
+    _log_kv(log, "保存目录", run_dir or Path(str(summary.get("csv_path", ""))).parent)
+    _log_kv(log, "训练轮数", summary.get("epochs"))
+
+    speed = result_metrics.get("speed")
+    if isinstance(speed, dict) and speed:
+        _log_subtitle(log, "处理速度 (ms/image)", width=width)
+        total = 0.0
+        for key, label in (
+            ("preprocess", "预处理"),
+            ("inference", "推理"),
+            ("loss", "损失计算"),
+            ("postprocess", "后处理"),
+        ):
+            value = speed.get(key)
+            if isinstance(value, (int, float)):
+                total += float(value)
+                _log_kv(log, label, f"{float(value):.3f} ms")
+        _log_kv(log, "总计", f"{total:.3f} ms")
+
+    _log_subtitle(log, "整体评估指标", width=width)
+    _log_kv(log, "Fitness 分数", _metric_value(result_metrics, last, "fitness"))
+    _log_kv(log, "Precision", _metric_value(result_metrics, last, "precision"))
+    _log_kv(log, "Recall", _metric_value(result_metrics, last, "recall"))
+    _log_kv(log, "mAP@50", _metric_value(result_metrics, last, "map50"))
+    _log_kv(log, "mAP@50-95", _metric_value(result_metrics, last, "map50_95"))
+    _log_kv(log, "最佳 mAP@50", _format_best_metric(best.get("map50")))
+    _log_kv(log, "最佳 mAP@50-95", _format_best_metric(best.get("map50_95")))
+
+    _log_subtitle(log, "损失指标", width=width)
+    _log_kv(log, "最终训练总损失", loss.get("last_train_total"))
+    _log_kv(log, "最终验证总损失", loss.get("last_val_total"))
+
+    class_maps = result_metrics.get("class_maps")
+    if isinstance(class_maps, list) and class_maps:
+        _log_subtitle(log, "类别级 mAP@0.5:0.95 (Box)", width=width)
+        for name, value in class_maps:
+            _log_kv(log, str(name), value)
+    log.info("=" * width)
+
+
 def _value(row: dict[str, float], key: str, default: float | None = None) -> float | None:
     value = row.get(key, math.nan)
     if math.isnan(value):
@@ -157,4 +217,97 @@ def _row_metric(row: dict[str, float], metric: str) -> dict[str, float | int | N
 def _fmt(value: Any) -> str:
     if isinstance(value, (int, float)) and not math.isnan(float(value)):
         return f"{float(value):.4f}"
+    if value is not None:
+        return str(value)
     return "N/A"
+
+
+def _log_section(log: logging.Logger, title: str, *, width: int) -> None:
+    log.info("=" * width)
+    log.info(pad_to_width(title, width, "center"))
+    log.info("=" * width)
+
+
+def _log_subtitle(log: logging.Logger, title: str, *, width: int) -> None:
+    log.info(pad_to_width(title, width, "center"))
+    log.info("-" * width)
+
+
+def _log_kv(log: logging.Logger, key: str, value: Any, *, key_width: int = 20) -> None:
+    log.info("%s: %s", pad_to_width(key, key_width), _fmt(value))
+
+
+def _format_best_metric(value: Any) -> str:
+    if not isinstance(value, dict):
+        return _fmt(value)
+    metric = _fmt(value.get("value"))
+    epoch = value.get("epoch")
+    if epoch is None:
+        return metric
+    return f"{metric} (epoch {epoch})"
+
+
+def _metric_value(result_metrics: dict[str, Any], last: dict[str, Any], key: str) -> Any:
+    value = result_metrics.get(key)
+    if value is not None:
+        return value
+    return last.get(key)
+
+
+def _extract_result_metrics(train_result: Any | None) -> dict[str, Any]:
+    if train_result is None:
+        return {}
+
+    metrics: dict[str, Any] = {}
+    task = getattr(train_result, "task", None)
+    if task is not None:
+        metrics["task"] = task
+
+    speed = getattr(train_result, "speed", None)
+    if isinstance(speed, dict):
+        metrics["speed"] = speed
+
+    results_dict = getattr(train_result, "results_dict", None)
+    if isinstance(results_dict, dict):
+        metrics.update(
+            {
+                "precision": _first_present(results_dict, ("metrics/precision(B)", "precision")),
+                "recall": _first_present(results_dict, ("metrics/recall(B)", "recall")),
+                "map50": _first_present(results_dict, ("metrics/mAP50(B)", "map50")),
+                "map50_95": _first_present(results_dict, ("metrics/mAP50-95(B)", "map50_95")),
+                "fitness": _first_present(results_dict, ("fitness",)),
+            }
+        )
+
+    class_maps = _extract_class_maps(train_result)
+    if class_maps:
+        metrics["class_maps"] = class_maps
+    return metrics
+
+
+def _first_present(values: dict[str, Any], keys: tuple[str, ...]) -> Any:
+    for key in keys:
+        if key in values:
+            return values[key]
+    return None
+
+
+def _extract_class_maps(train_result: Any) -> list[tuple[str, Any]]:
+    names = getattr(train_result, "names", None)
+    maps = getattr(train_result, "maps", None)
+    if names is None or maps is None:
+        return []
+
+    try:
+        map_values = list(maps)
+    except TypeError:
+        return []
+
+    if isinstance(names, dict):
+        return [(str(names.get(index, index)), value) for index, value in enumerate(map_values)]
+    if isinstance(names, (list, tuple)):
+        return [
+            (str(names[index]) if index < len(names) else str(index), value)
+            for index, value in enumerate(map_values)
+        ]
+    return []

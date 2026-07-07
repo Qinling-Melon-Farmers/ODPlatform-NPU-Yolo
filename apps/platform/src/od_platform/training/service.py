@@ -9,16 +9,18 @@ import shutil
 from dataclasses import dataclass, replace
 from datetime import datetime
 from pathlib import Path
+from time import perf_counter
 from typing import Any
 
 import yaml
 
 from od_platform.common import paths
 from od_platform.common.refs import resolve_model, resolve_yaml
+from od_platform.common.string_utils import pad_to_width
 from od_platform.common.system_utils import get_basic_device_info
 from od_platform.runtime_config.train import YOLOTrainConfig
 from od_platform.training.metrics import (
-    log_metrics_summary,
+    log_training_report,
     summarize_results_csv,
     write_metrics_summary,
 )
@@ -125,13 +127,34 @@ def run_training(
         from ultralytics import YOLO
 
         model = YOLO(str(model_ref))
+        start_time = perf_counter()
         train_result = model.train(**kwargs)
+        elapsed_seconds = perf_counter() - start_time
         actual_run_dir = _resolve_completed_run_dir(plan.source_run_dir, train_result)
         if actual_run_dir != plan.source_run_dir:
             run_logger.warning("ultralytics output dir changed: %s -> %s", plan.source_run_dir, actual_run_dir)
             plan = replace(plan, source_run_name=actual_run_dir.name, source_run_dir=actual_run_dir)
         run_logger.info("ultralytics training finished")
         training_outputs = inspect_training_outputs(plan.source_run_dir, task=config.task, target_logger=run_logger)
+        if config.archive_weights:
+            archived = archive_model_weights(
+                plan.source_run_dir,
+                plan.archive_run_name,
+                config.model,
+                copy=config.copy_archive,
+            )
+            run_logger.info("archived weights: %s", {key: str(value) for key, value in archived.items()})
+        training_outputs["elapsed_seconds"] = round(elapsed_seconds, 3)
+        training_outputs["archived_weights"] = {key: str(value) for key, value in archived.items()}
+        metrics_summary = training_outputs.get("metrics_summary")
+        if isinstance(metrics_summary, dict):
+            log_training_report(
+                metrics_summary,
+                run_dir=plan.source_run_dir,
+                target_logger=run_logger,
+                train_result=train_result,
+            )
+        _log_training_outputs(plan, elapsed_seconds, archived, run_logger)
         manifest_path = write_training_manifest(
             plan,
             config,
@@ -141,14 +164,6 @@ def run_training(
             dry_run=False,
             training_outputs=training_outputs,
         )
-        if config.archive_weights:
-            archived = archive_model_weights(
-                plan.source_run_dir,
-                plan.archive_run_name,
-                config.model,
-                copy=config.copy_archive,
-            )
-            run_logger.info("archived weights: %s", {key: str(value) for key, value in archived.items()})
     else:
         run_logger.info("dry run enabled; ultralytics training skipped")
 
@@ -209,7 +224,6 @@ def inspect_training_outputs(
         summary_path = write_metrics_summary(results_csv, run_dir / "training_metrics.json", task=task)
         output["metrics_summary"] = summary
         output["metrics_summary_path"] = str(summary_path)
-        log_metrics_summary(summary, target_logger=target_logger)
     except Exception as exc:
         output["metrics_error"] = f"{type(exc).__name__}: {exc}"
         if target_logger is not None:
@@ -374,6 +388,26 @@ def _log_effective_config(config: YOLOTrainConfig, target_logger: logging.Logger
     for field_name in config.__class__.model_fields:
         target_logger.info("%-20s: %s (source: %s)", field_name, getattr(config, field_name, None), source)
     target_logger.info("=" * 60)
+
+
+def _log_training_outputs(
+    plan: TrainingRunPlan,
+    elapsed_seconds: float,
+    archived_weights: dict[str, Path],
+    target_logger: logging.Logger,
+) -> None:
+    width = 60
+    target_logger.info("=" * width)
+    target_logger.info(pad_to_width("训练产物", width, "center"))
+    target_logger.info("-" * width)
+    target_logger.info("%s: %.2f 秒", pad_to_width("训练总耗时", 20), elapsed_seconds)
+    target_logger.info("%s: %s", pad_to_width("输出目录", 20), plan.source_run_dir)
+    target_logger.info("%s: %s", pad_to_width("审计清单", 20), plan.source_run_dir / "training_manifest.json")
+    best = archived_weights.get("best") or plan.source_run_dir / "weights" / "best.pt"
+    target_logger.info("%s: %s", pad_to_width("最佳权重", 20), best)
+    for kind, path in archived_weights.items():
+        target_logger.info("%s: %s", pad_to_width(f"{kind} 归档", 20), path)
+    target_logger.info("=" * width)
 
 
 def _close_logger(run_logger: logging.Logger) -> None:

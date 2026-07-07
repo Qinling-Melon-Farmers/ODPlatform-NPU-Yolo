@@ -1,9 +1,11 @@
 import json
+import logging
 import sys
 import tempfile
 import types
 import unittest
 from datetime import datetime
+from io import StringIO
 from pathlib import Path
 from unittest.mock import patch
 
@@ -12,7 +14,11 @@ from od_platform.cli.train_model import main as train_main
 from od_platform.runtime_config.generator import write_train_template
 from od_platform.runtime_config.loaders import load_train_config
 from od_platform.runtime_config.train import YOLOTrainConfig
-from od_platform.training.metrics import summarize_results_csv, write_metrics_summary
+from od_platform.training.metrics import (
+    log_training_report,
+    summarize_results_csv,
+    write_metrics_summary,
+)
 from od_platform.training.plots import plot_training_results
 from od_platform.training.service import (
     archive_model_weights,
@@ -298,6 +304,44 @@ class TestTrainingRuntime(unittest.TestCase):
             self.assertEqual(summary["last"]["map50_95"], 0.8)
             self.assertTrue(summary_path.exists())
             self.assertTrue(figure_path.exists())
+
+    def test_training_report_logs_teaching_style_sections(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            csv_path = root / "results.csv"
+            csv_path.write_text(
+                "\n".join(
+                    [
+                        "epoch,time,train/box_loss,train/cls_loss,train/dfl_loss,metrics/precision(B),metrics/recall(B),metrics/mAP50(B),metrics/mAP50-95(B),val/box_loss,val/cls_loss,val/dfl_loss,lr/pg0,lr/pg1,lr/pg2",
+                        "1,1.0,1.0,2.0,3.0,0.1,0.2,0.3,0.4,1.1,2.1,3.1,0.001,0.001,0.001",
+                    ]
+                ),
+                encoding="utf-8",
+            )
+            summary = summarize_results_csv(csv_path)
+            stream = StringIO()
+            test_logger = logging.getLogger("od_platform.tests.training_report")
+            test_logger.handlers.clear()
+            test_logger.setLevel(logging.INFO)
+            test_logger.propagate = False
+            handler = logging.StreamHandler(stream)
+            test_logger.addHandler(handler)
+            train_result = types.SimpleNamespace(
+                task="detect",
+                speed={"preprocess": 0.5, "inference": 2.0, "loss": 0.0, "postprocess": 1.0},
+                results_dict={"metrics/precision(B)": 0.7, "metrics/recall(B)": 0.8, "fitness": 0.9},
+                names={0: "steel"},
+                maps=[0.65],
+            )
+
+            log_training_report(summary, run_dir=root, target_logger=test_logger, train_result=train_result)
+
+            output = stream.getvalue()
+            self.assertIn("训练结果 (detect)", output)
+            self.assertIn("处理速度", output)
+            self.assertIn("Precision", output)
+            self.assertIn("steel", output)
+            test_logger.handlers.clear()
 
 
 if __name__ == "__main__":
