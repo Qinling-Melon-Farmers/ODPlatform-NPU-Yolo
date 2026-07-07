@@ -7,6 +7,31 @@ from pathlib import Path
 from colorlog import ColoredFormatter
 
 ROOT_LOGGER_NAME: str = "od_platform"
+DEFAULT_SECTION_WIDTH: int = 60
+
+
+def format_log_rule(width: int = DEFAULT_SECTION_WIDTH, char: str = "=") -> str:
+    """Return a stable terminal/log separator line."""
+    return char * max(1, width)
+
+
+def format_log_section(title: str, width: int = DEFAULT_SECTION_WIDTH, char: str = "=") -> str:
+    """Return a centered section title for CLI logs."""
+    if width <= len(title) + 2:
+        return title
+    return f" {title} ".center(width, char)
+
+
+def format_status_label(status: str) -> str:
+    """Normalize short status labels used in CLI logs."""
+    labels = {
+        "created": "[OK]",
+        "existed": "[SKIP]",
+        "warning": "[WARN]",
+        "error": "[ERROR]",
+        "dry_run": "[DRY-RUN]",
+    }
+    return labels.get(status, f"[{status.upper()}]")
 
 
 def get_logger(
@@ -50,17 +75,34 @@ def get_logger(
 
     console_formatter = ColoredFormatter(
         "%(log_color)s%(asctime)s%(reset)s "
-        "%(log_color)s[%(levelname)-8s]%(reset)s "
-        "%(cyan)s%(filename)-25s%(reset)s:"
+        "%(level_log_color)s[%(levelname)-8s]%(reset)s "
+        "%(thin_white)s%(filename)-24s%(reset)s:"
         "%(blue)s%(lineno)-4d%(reset)s "
-        "%(log_color)s│ %(message)s%(reset)s",
+        "%(thin_white)s|%(reset)s "
+        "%(message_log_color)s%(message)s%(reset)s",
         datefmt="%Y-%m-%d %H:%M:%S",
         log_colors={
-            "DEBUG": "white",
+            "DEBUG": "thin_white",
             "INFO": "green",
             "WARNING": "yellow",
             "ERROR": "red",
             "CRITICAL": "bold_red,bg_white",
+        },
+        secondary_log_colors={
+            "level": {
+                "DEBUG": "thin_white",
+                "INFO": "green",
+                "WARNING": "yellow",
+                "ERROR": "red",
+                "CRITICAL": "bold_red,bg_white",
+            },
+            "message": {
+                "DEBUG": "thin_white",
+                "INFO": "green",
+                "WARNING": "yellow",
+                "ERROR": "red",
+                "CRITICAL": "bold_red,bg_white",
+            },
         },
         style="%",
     )
@@ -74,13 +116,13 @@ def get_logger(
     console_handler.setFormatter(console_formatter)
     logger.addHandler(console_handler)
 
-    logger.info("=" * 60)
-    logger.info("日志系统初始化完成")
-    logger.info("运行环境: %s %s", platform.system(), platform.release())
-    logger.info("阶段类型: %s", log_type)
-    logger.info("日志文件: %s", log_file)
-    logger.info("日志级别: %s", logging.getLevelName(log_level))
-    logger.info("模型名称: %s", model_name or "无")
-    logger.info("=" * 60)
+    logger.info(format_log_rule())
+    logger.info(format_log_section("Logging Ready"))
+    logger.info("runtime: %s %s", platform.system(), platform.release())
+    logger.info("log type: %s", log_type)
+    logger.info("log file: %s", log_file)
+    logger.info("log level: %s", logging.getLevelName(log_level))
+    logger.info("model name: %s", model_name or "none")
+    logger.info(format_log_rule())
 
     return logger
