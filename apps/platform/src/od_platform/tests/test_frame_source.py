@@ -8,6 +8,7 @@ import numpy as np
 from od_platform.frame_source import (
     CameraConfig,
     FrameSource,
+    ImageSource,
     SourceType,
     create_frame_source,
     detect_source_type,
@@ -53,6 +54,17 @@ class TestFrameSource(unittest.TestCase):
                 self.assertEqual(frame.resolution, (12, 8))
                 self.assertEqual(frame.info.filename, "sample.png")
                 self.assertIsNone(source.read())
+
+    def test_image_source_name_reads_once(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            path = Path(temp_dir) / "sample.jpg"
+            self._write_image(path)
+
+            with ImageSource(path) as source:
+                frame = source.read()
+
+            self.assertIsNotNone(frame)
+            self.assertEqual(frame.info.source_path, str(path))
 
     def test_image_folder_source_reads_sorted_images_with_stride(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:

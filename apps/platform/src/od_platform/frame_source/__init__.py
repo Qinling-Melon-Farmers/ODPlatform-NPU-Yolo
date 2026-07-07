@@ -2,6 +2,7 @@
 
 from od_platform.frame_source.base import FrameSource, FrameSourceError
 from od_platform.frame_source.config import CameraBackend, CameraCodec, CameraConfig
+from od_platform.frame_source.image import ImageFolderSource, ImageSource
 from od_platform.frame_source.opencv import (
     CameraFrameSource,
     ImageFolderFrameSource,
@@ -29,7 +30,9 @@ __all__ = [
     "FrameSourceError",
     "IMAGE_EXTENSIONS",
     "ImageFolderFrameSource",
+    "ImageFolderSource",
     "ImageFrameSource",
+    "ImageSource",
     "SourceType",
     "VIDEO_EXTENSIONS",
     "VideoFrameSource",

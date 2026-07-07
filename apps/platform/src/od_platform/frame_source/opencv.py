@@ -8,8 +8,9 @@ from pathlib import Path
 
 import cv2
 
-from od_platform.frame_source.base import FrameSource, FrameSourceError
+from od_platform.frame_source.base import FrameSource
 from od_platform.frame_source.config import CameraConfig
+from od_platform.frame_source.image import ImageFolderFrameSource, ImageFrameSource
 from od_platform.frame_source.types import (
     IMAGE_EXTENSIONS,
     VIDEO_EXTENSIONS,
@@ -17,119 +18,6 @@ from od_platform.frame_source.types import (
     FrameInfo,
     SourceType,
 )
-
-
-class ImageFrameSource(FrameSource):
-    """Single image source."""
-
-    def __init__(self, source_path: str | Path) -> None:
-        super().__init__(str(source_path))
-        self.path = Path(source_path)
-        self._opened = False
-        self._consumed = False
-
-    def open(self) -> bool:
-        self._opened = self.path.is_file()
-        self._consumed = False
-        return self._opened
-
-    def read(self) -> Frame | None:
-        if not self._opened or self._consumed:
-            return None
-        image = cv2.imread(str(self.path))
-        if image is None:
-            raise FrameSourceError(f"failed to read image: {self.path}")
-        self._consumed = True
-        height, width = image.shape[:2]
-        return Frame(
-            image=image,
-            info=FrameInfo(
-                width=width,
-                height=height,
-                source_type=SourceType.IMAGE,
-                source_path=str(self.path),
-                frame_index=0,
-                total_frames=1,
-                filename=self.path.name,
-            ),
-        )
-
-    def close(self) -> None:
-        self._opened = False
-
-    def get_source_type(self) -> SourceType:
-        return SourceType.IMAGE
-
-    def seek(self, frame: int | None = None, time_sec: float | None = None) -> bool:
-        if frame in (None, 0) and time_sec in (None, 0.0):
-            self._consumed = False
-            return True
-        return False
-
-    def seekable(self) -> bool:
-        return True
-
-
-class ImageFolderFrameSource(FrameSource):
-    """Read images from a folder in lexical order."""
-
-    def __init__(self, source_path: str | Path) -> None:
-        super().__init__(str(source_path))
-        self.path = Path(source_path)
-        self._images: list[Path] = []
-        self._cursor = 0
-
-    def open(self) -> bool:
-        if not self.path.is_dir():
-            return False
-        self._images = sorted(
-            item for item in self.path.iterdir() if item.is_file() and item.suffix.lower() in IMAGE_EXTENSIONS
-        )
-        self._cursor = 0
-        self._frame_index = 0
-        return True
-
-    def read(self) -> Frame | None:
-        while self._cursor < len(self._images):
-            path = self._images[self._cursor]
-            index = self._cursor
-            self._cursor += self._stride
-            image = cv2.imread(str(path))
-            if image is None:
-                continue
-            height, width = image.shape[:2]
-            self._frame_index = index + 1
-            return Frame(
-                image=image,
-                info=FrameInfo(
-                    width=width,
-                    height=height,
-                    source_type=SourceType.IMAGE_FOLDER,
-                    source_path=str(self.path),
-                    frame_index=index,
-                    total_frames=len(self._images),
-                    filename=path.name,
-                ),
-            )
-        return None
-
-    def close(self) -> None:
-        self._images = []
-        self._cursor = 0
-
-    def get_source_type(self) -> SourceType:
-        return SourceType.IMAGE_FOLDER
-
-    def seek(self, frame: int | None = None, time_sec: float | None = None) -> bool:
-        if frame is None:
-            frame = 0
-        if frame < 0 or frame >= len(self._images):
-            return False
-        self._cursor = frame
-        return True
-
-    def seekable(self) -> bool:
-        return True
 
 
 class VideoFrameSource(FrameSource):
