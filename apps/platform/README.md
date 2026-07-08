@@ -23,7 +23,7 @@ pip install -e ./apps/platform
 | `odp-gen-config` | 生成运行配置 |
 | `odp-train` | YOLO 训练 |
 | `odp-val` | YOLO 模型评估 |
-| `odp-infer` | YOLO 推理，支持 D8 逐帧流水线 |
+| `odp-infer` | YOLO 推理，支持 D8 逐帧和多级流水线 |
 | `odp-plot-training` | 训练结果图表 |
 
 ## Steel 常用命令
@@ -47,7 +47,7 @@ odp-infer --model models/trained/steel-defect-yolo11n-2-20260707-122829-yolo11n-
 - `evaluation`：模型评估，提供 `odp-val`，只产出指标和审计，不归档权重。
 - `frame_source`：图片、图片文件夹、视频、摄像头输入源。
 - `visualization`：检测框美化、中文标签映射、颜色映射。
-- `inference`：推理执行、逐帧 pipeline、threaded frame source、hook、sink、HUD 和审计。
+- `inference`：推理执行、逐帧和多级 pipeline、hook、sink、HUD 和审计。
 
 ## 验证
 

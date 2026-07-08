@@ -24,8 +24,14 @@ class InferWorker(QObject):
         model: str,
         source: str,
         conf: float,
+        iou: float,
         device: str | None,
         name: str,
+        task: str = "detect",
+        imgsz: int | None = None,
+        max_det: int | None = None,
+        classes: str | None = None,
+        runtime_config: str | None = None,
         pipeline_yaml: str | None = None,
         save_outputs: bool = False,
         threaded: bool = True,
@@ -36,8 +42,14 @@ class InferWorker(QObject):
         self._model = model
         self._source = source
         self._conf = conf
+        self._iou = iou
         self._device = device
         self._name = name
+        self._task = task
+        self._imgsz = imgsz
+        self._max_det = max_det
+        self._classes = classes
+        self._runtime_config = runtime_config
         self._pipeline_yaml = pipeline_yaml
         self._save_outputs = save_outputs
         self._threaded = threaded
@@ -66,13 +78,21 @@ class InferWorker(QObject):
         cli_args: dict[str, Any] = {
             "model": self._model,
             "source": self._source,
+            "task": self._task,
             "conf": self._conf,
+            "iou": self._iou,
             "name": self._name,
             "save": self._save_outputs,
             "show": False,
         }
         if self._device:
             cli_args["device"] = self._device
+        if self._imgsz:
+            cli_args["imgsz"] = self._imgsz
+        if self._max_det:
+            cli_args["max_det"] = self._max_det
+        if self._classes:
+            cli_args["classes"] = [int(item.strip()) for item in self._classes.split(",") if item.strip()]
 
         sink = QtSignalSink(self.frame_ready.emit, save_to_disk=self._save_outputs)
         hooks = InferHooks(
@@ -81,6 +101,7 @@ class InferWorker(QObject):
             progress_interval_frames=10,
         )
         return infer_yolo(
+            yaml_path=self._runtime_config,
             pipeline_yaml=self._pipeline_yaml,
             cli_args=cli_args,
             beautify=True,

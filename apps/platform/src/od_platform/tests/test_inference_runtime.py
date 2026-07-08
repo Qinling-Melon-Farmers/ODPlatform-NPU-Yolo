@@ -270,14 +270,13 @@ visualization:
             self.assertEqual(payload["stats"]["frames"], 1)
             self.assertEqual(payload["stats"]["detections"], 1)
 
-    def test_infer_cli_threaded_video_uses_bounded_buffer(self) -> None:
+    def test_infer_cli_threaded_video_uses_staged_bounded_pipeline(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             root = Path(temp_dir)
             model_path = root / "best.pt"
             source_path = root / "demo.mp4"
             model_path.write_bytes(b"model")
             source_path.write_bytes(b"video")
-            captured: dict[str, object] = {}
 
             class FakeBoxes:
                 data = np.array([[1, 2, 30, 40, 0.91, 0]], dtype=float)
@@ -299,22 +298,17 @@ visualization:
                 def __call__(self, image, **kwargs):
                     return [FakeResult()]
 
-            class FakeThreadedSource:
+            class FakeFrameSource:
                 def __init__(
                     self,
                     source,
                     camera_config=None,
                     *,
                     stride=1,
-                    buffer="latest",
-                    buffer_size=1,
-                    read_timeout=5.0,
                     **_options,
                 ):
-                    captured["source"] = source
-                    captured["buffer"] = buffer
-                    captured["buffer_size"] = buffer_size
-                    captured["read_timeout"] = read_timeout
+                    self.source = source
+                    self.stride = stride
                     self._done = False
 
                 def __enter__(self):
@@ -352,7 +346,7 @@ visualization:
             with (
                 self._patch_inference_paths(root),
                 patch.dict(sys.modules, {"ultralytics": fake_ultralytics}),
-                patch("od_platform.inference.pipeline.create_threaded_source", FakeThreadedSource),
+                patch("od_platform.inference.pipeline.create_frame_source", FakeFrameSource),
             ):
                 try:
                     code = infer_main(
@@ -373,11 +367,11 @@ visualization:
                     self._close_project_logger()
 
             self.assertEqual(code, 0)
-            self.assertEqual(captured["buffer"], "bounded")
             audit = root / "runs" / "inference" / "detect" / "threaded-video" / "odp_audit.json"
             payload = json.loads(audit.read_text(encoding="utf-8"))
             self.assertEqual(payload["stats"]["source_mode"], "threaded")
             self.assertEqual(payload["stats"]["source_buffer"], "bounded")
+            self.assertEqual(payload["stats"]["pipeline_stages"], ["read", "infer", "render", "output"])
 
 
 if __name__ == "__main__":

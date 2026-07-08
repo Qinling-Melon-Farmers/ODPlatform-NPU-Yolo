@@ -17,6 +17,7 @@ try:
     from PySide6.QtWidgets import (
         QApplication,
         QCheckBox,
+        QComboBox,
         QFileDialog,
         QFormLayout,
         QHBoxLayout,
@@ -53,10 +54,23 @@ class MainWindow(QMainWindow):
 
         self.model_edit = QLineEdit(str(_default_model()))
         self.source_edit = QLineEdit(str(_default_source()))
+        self.runtime_edit = QLineEdit("")
         self.pipeline_edit = QLineEdit(str(ROOT_DIR / "apps" / "platform" / "configs" / "runtime" / "infer_pipeline.yaml"))
+        self.task_combo = QComboBox()
+        self.task_combo.addItems(["detect", "segment"])
         self.conf_edit = QLineEdit("0.25")
+        self.iou_edit = QLineEdit("0.70")
         self.device_edit = QLineEdit("0")
         self.name_edit = QLineEdit("desktop-steel-demo")
+        self.imgsz_spin = QSpinBox()
+        self.imgsz_spin.setRange(32, 4096)
+        self.imgsz_spin.setSingleStep(32)
+        self.imgsz_spin.setValue(640)
+        self.max_det_spin = QSpinBox()
+        self.max_det_spin.setRange(1, 10000)
+        self.max_det_spin.setValue(300)
+        self.classes_edit = QLineEdit("")
+        self.classes_edit.setPlaceholderText("如 0,2,5；空=全部类别")
         self.max_frames_spin = QSpinBox()
         self.max_frames_spin.setRange(0, 1_000_000)
         self.max_frames_spin.setSpecialValueText("不限")
@@ -95,8 +109,14 @@ class MainWindow(QMainWindow):
                 ],
             ),
         )
+        form.addRow("运行配置", _with_buttons(self.runtime_edit, [("选择 YAML", self._browse_runtime)]))
         form.addRow("Pipeline", _with_buttons(self.pipeline_edit, [("选择 YAML", self._browse_pipeline)]))
+        form.addRow("任务", self.task_combo)
         form.addRow("置信度", self.conf_edit)
+        form.addRow("IoU", self.iou_edit)
+        form.addRow("图像尺寸", self.imgsz_spin)
+        form.addRow("最大检测数", self.max_det_spin)
+        form.addRow("类别过滤", self.classes_edit)
         form.addRow("设备", self.device_edit)
         form.addRow("运行名", self.name_edit)
         form.addRow("最多帧数", self.max_frames_spin)
@@ -131,8 +151,9 @@ class MainWindow(QMainWindow):
             return
         try:
             conf = float(self.conf_edit.text().strip())
+            iou = float(self.iou_edit.text().strip())
         except ValueError:
-            self.status_label.setText("状态：置信度必须是数字")
+            self.status_label.setText("状态：置信度和 IoU 必须是数字")
             return
 
         self._thread = QThread(self)
@@ -140,8 +161,14 @@ class MainWindow(QMainWindow):
             model=self.model_edit.text().strip(),
             source=self.source_edit.text().strip(),
             conf=conf,
+            iou=iou,
             device=self.device_edit.text().strip() or None,
             name=self.name_edit.text().strip() or "desktop-infer",
+            task=self.task_combo.currentText(),
+            imgsz=self.imgsz_spin.value(),
+            max_det=self.max_det_spin.value(),
+            classes=self.classes_edit.text().strip() or None,
+            runtime_config=self.runtime_edit.text().strip() or None,
             pipeline_yaml=self.pipeline_edit.text().strip() or None,
             save_outputs=self.save_check.isChecked(),
             threaded=self.threaded_check.isChecked(),
@@ -224,6 +251,11 @@ class MainWindow(QMainWindow):
         directory = QFileDialog.getExistingDirectory(self, "选择图片文件夹", str(ROOT_DIR))
         if directory:
             self.source_edit.setText(directory)
+
+    def _browse_runtime(self) -> None:
+        path, _ = QFileDialog.getOpenFileName(self, "选择推理运行配置", str(ROOT_DIR), "YAML (*.yaml *.yml)")
+        if path:
+            self.runtime_edit.setText(path)
 
     def _browse_pipeline(self) -> None:
         path, _ = QFileDialog.getOpenFileName(self, "选择推理 pipeline 配置", str(ROOT_DIR), "YAML (*.yaml *.yml)")

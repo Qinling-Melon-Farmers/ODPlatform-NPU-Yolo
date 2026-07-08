@@ -42,7 +42,10 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--threaded",
         action="store_true",
-        help="Read frames in a background thread. Camera uses latest-frame buffer; file sources use bounded buffer.",
+        help=(
+            "Enable the staged inference pipeline. Camera uses a latest-frame read buffer; "
+            "file sources use bounded queues."
+        ),
     )
     parser.add_argument("--max-frames", type=int, help="Stop after N processed frames; useful for smoke tests.")
     parser.add_argument("--window-name", default="odp-infer", help="OpenCV window title when --show is enabled.")

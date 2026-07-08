@@ -1,4 +1,6 @@
-# ODPlatform
+# SteelDefect Studio
+
+内部平台包名仍为 `ODPlatform` / `od_platform`。
 
 ODPlatform 是生产实习阶段构建的目标检测开发平台。当前主线围绕 steel surface defect 数据集完成数据导入、格式转换、数据质检、训练、模型评估、推理、训练曲线、推理结果美化和桌面端推理演示。
 
@@ -43,10 +45,10 @@ odp-val --config val --model models/trained/steel-defect-yolo11n-2-20260707-1228
 # 图片目录推理；默认读取 apps/platform/configs/runtime/infer_pipeline.yaml 的 steel 中文标签映射
 odp-infer --model models/trained/steel-defect-yolo11n-2-20260707-122829-yolo11n-best/best.pt --source data/processed/steel-surface-defect/test/images --conf 0.25 --device 0 --name steel-defect-test --threaded
 
-# 视频文件推理；threaded 模式对文件源使用 bounded 缓冲，优先保证不丢帧
+# 视频文件推理；threaded 模式启用读帧/推理/渲染/输出多级流水线，文件源使用 bounded 缓冲
 odp-infer --model models/trained/steel-defect-yolo11n-2-20260707-122829-yolo11n-best/best.pt --source demo.mp4 --conf 0.25 --device 0 --name steel-video-demo --threaded
 
-# 摄像头实时推理；threaded 模式对摄像头使用 latest 缓冲，优先保证实时性
+# 摄像头实时推理；threaded 模式启用多级流水线，摄像头使用 latest 缓冲优先保证实时性
 odp-infer --model models/trained/steel-defect-yolo11n-2-20260707-122829-yolo11n-best/best.pt --source 0 --show --conf 0.25 --device 0 --name steel-camera-demo --threaded
 ```
 
@@ -75,7 +77,7 @@ pip install -r apps/desktop/requirements.txt
 python apps/desktop/main.py
 ```
 
-界面默认优先查找 `models/trained/**/*best*.pt`，并读取 `apps/platform/configs/runtime/infer_pipeline.yaml` 中的 steel 中文类别映射。输入源支持图片、视频、图片文件夹和摄像头；“后台读帧”默认开启，复用 D8 `--threaded` 推理路径。
+界面默认优先查找 `models/trained/**/*best*.pt`，并读取 `apps/platform/configs/runtime/infer_pipeline.yaml` 中的 steel 中文类别映射。输入源支持图片、视频、图片文件夹和摄像头；“多级流水线”默认开启，复用 D8 `--threaded` 推理路径。桌面端当前已接入 runtime 配置、pipeline 配置、task、conf、iou、imgsz、max_det、classes、device、name、max_frames 等主要推理参数。
 
 ## 模块边界
 
@@ -87,7 +89,7 @@ python apps/desktop/main.py
 - `evaluation/`：D7 模型评估，提供 `ValService`、`ValResult`、`odp-val`。
 - `frame_source/`：图片、图片文件夹、视频、摄像头统一帧输入源。
 - `visualization/`：中文标签、颜色映射、圆角框、Pillow 文本渲染和尺寸缓存。
-- `inference/`：D8 推理服务、逐帧流水线、hook、sink、HUD、审计输出。
+- `inference/`：D8 推理服务、逐帧与多级流水线、hook、sink、HUD、审计输出。
 - `apps/desktop/`：PySide6 桌面端推理演示，只调用 platform 服务层。
 
 ## 根目录参考资产说明
@@ -96,8 +98,8 @@ python apps/desktop/main.py
 
 ## 后续重点
 
-- D8 推理流水线当前已具备 CLI、service、hook、sink、cancel、threaded frame source 和审计闭环。
-- 桌面端后续增加暂停/继续、评估结果、数据质检报告和训练曲线浏览。
+- D8 推理流水线当前已具备 CLI、service、hook、sink、cancel、多级流水线和审计闭环。
+- 桌面端后续增加暂停/继续、评估结果、数据质检报告、训练曲线浏览和更完整的运行历史。
 - Web 后端仍是预留目录，尚未进入当前阶段主线。
 
 ## 验证

@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import logging
+import queue
+import threading
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -13,7 +15,6 @@ from od_platform.frame_source import (
     CameraConfig,
     SourceType,
     create_frame_source,
-    create_threaded_source,
     detect_source_type,
 )
 from od_platform.inference.cancel import CancelToken
@@ -23,6 +24,8 @@ from od_platform.inference.sinks import OutputSink
 from od_platform.visualization import Detection
 
 logger = logging.getLogger(__name__)
+
+_STOP = object()
 
 
 @dataclass
@@ -39,6 +42,7 @@ class InferStats:
     speed_ms: dict[str, float] = field(default_factory=dict)
     source_mode: str = "sequential"
     source_buffer: str | None = None
+    pipeline_stages: list[str] = field(default_factory=list)
 
     @property
     def avg_fps(self) -> float:
@@ -67,7 +71,26 @@ class InferStats:
             "speed_ms": self.speed_ms,
             "source_mode": self.source_mode,
             "source_buffer": self.source_buffer,
+            "pipeline_stages": list(self.pipeline_stages),
         }
+
+
+@dataclass
+class _InferPacket:
+    frame: Any
+    result: Any
+    detections: list[Detection]
+    elapsed_seconds: float
+
+
+@dataclass
+class _RenderPacket:
+    frame: Any
+    result: Any
+    detections: list[Detection]
+    annotated: Any
+    infer_seconds: float
+    render_seconds: float
 
 
 class SequentialInferencePipeline:
@@ -115,6 +138,11 @@ class SequentialInferencePipeline:
         self.max_frames = max_frames
 
     def run(self) -> InferStats:
+        if self.threaded:
+            return self._run_staged()
+        return self._run_sequential()
+
+    def _run_sequential(self) -> InferStats:
         metrics = Metrics()
         stats = InferStats()
         start = time.perf_counter()
@@ -123,8 +151,9 @@ class SequentialInferencePipeline:
 
         try:
             with self._create_source() as source:
-                stats.source_mode = "threaded" if self.threaded else "sequential"
+                stats.source_mode = "sequential"
                 stats.source_buffer = self._resolved_source_buffer()
+                stats.pipeline_stages = ["read+infer+render+output"]
                 self.output_sink.open(self.output_dir, source.get_source_type())
                 opened_sink = True
                 for frame in source:
@@ -197,20 +226,212 @@ class SequentialInferencePipeline:
         logger.info("inference pipeline finished: frames=%s detections=%s", stats.frames, stats.detections)
         return stats
 
+    def _run_staged(self) -> InferStats:
+        metrics = Metrics()
+        stats = InferStats(source_mode="threaded", source_buffer=self._resolved_source_buffer())
+        stats.pipeline_stages = ["read", "infer", "render", "output"]
+        start = time.perf_counter()
+        last_loop = start
+        stop_event = threading.Event()
+        errors: list[BaseException] = []
+        frame_queue: queue.Queue[Any] = queue.Queue(
+            maxsize=1 if stats.source_buffer == "latest" else self.buffer_size
+        )
+        infer_queue: queue.Queue[Any] = queue.Queue(maxsize=self.buffer_size)
+        render_queue: queue.Queue[Any] = queue.Queue(maxsize=self.buffer_size)
+        opened_sink = False
+
+        source_type = detect_source_type(self.source)
+        self.output_sink.open(self.output_dir, source_type)
+        opened_sink = True
+
+        def cancelled() -> bool:
+            return stop_event.is_set() or self._cancelled()
+
+        def remember_error(exc: BaseException) -> None:
+            errors.append(exc)
+            stop_event.set()
+
+        def put_item(target: queue.Queue[Any], item: Any, *, latest: bool = False) -> None:
+            if latest:
+                self._drain_queue(target)
+                try:
+                    target.put_nowait(item)
+                    return
+                except queue.Full:
+                    return
+            while not cancelled():
+                try:
+                    target.put(item, timeout=0.1)
+                    return
+                except queue.Full:
+                    continue
+
+        def put_stop(target: queue.Queue[Any], *, clear: bool = False) -> None:
+            if clear:
+                self._drain_queue(target)
+            while True:
+                try:
+                    target.put(_STOP, timeout=0.1)
+                    return
+                except queue.Full:
+                    if clear or stop_event.is_set():
+                        self._drain_queue(target)
+
+        def read_worker() -> None:
+            try:
+                with create_frame_source(self.source, self.camera_config, stride=self.stride) as source:
+                    for frame in source:
+                        if cancelled():
+                            break
+                        if frame.info.frame_index < self.warmup_frames:
+                            continue
+                        put_item(frame_queue, frame, latest=stats.source_buffer == "latest")
+            except BaseException as exc:  # pragma: no cover - defensive around device/codec backends.
+                remember_error(exc)
+            finally:
+                put_stop(frame_queue, clear=stats.source_buffer == "latest")
+
+        def infer_worker() -> None:
+            try:
+                while not cancelled():
+                    item = self._get_queue_item(frame_queue, stop_event)
+                    if item is None:
+                        continue
+                    if item is _STOP:
+                        break
+                    infer_start = time.perf_counter()
+                    result, detections = self.processor.infer(item.image)
+                    elapsed = time.perf_counter() - infer_start
+                    put_item(infer_queue, _InferPacket(item, result, detections, elapsed))
+            except BaseException as exc:  # pragma: no cover - model backend errors are covered by service fallback.
+                remember_error(exc)
+            finally:
+                put_stop(infer_queue)
+
+        def render_worker() -> None:
+            try:
+                while not cancelled():
+                    item = self._get_queue_item(infer_queue, stop_event)
+                    if item is None:
+                        continue
+                    if item is _STOP:
+                        break
+                    render_start = time.perf_counter()
+                    annotated = self.processor.draw(item.frame.image, item.result, item.detections)
+                    render_elapsed = time.perf_counter() - render_start
+                    put_item(
+                        render_queue,
+                        _RenderPacket(
+                            frame=item.frame,
+                            result=item.result,
+                            detections=item.detections,
+                            annotated=annotated,
+                            infer_seconds=item.elapsed_seconds,
+                            render_seconds=render_elapsed,
+                        ),
+                    )
+            except BaseException as exc:  # pragma: no cover - rendering backends are environment-dependent.
+                remember_error(exc)
+            finally:
+                put_stop(render_queue)
+
+        workers = [
+            threading.Thread(target=read_worker, name="odp-infer-read", daemon=True),
+            threading.Thread(target=infer_worker, name="odp-infer-infer", daemon=True),
+            threading.Thread(target=render_worker, name="odp-infer-render", daemon=True),
+        ]
+        for worker in workers:
+            worker.start()
+
+        try:
+            while not stop_event.is_set():
+                item = self._get_queue_item(render_queue, stop_event, timeout=0.1)
+                if item is None:
+                    if errors:
+                        raise errors[0]
+                    continue
+                if item is _STOP:
+                    break
+
+                metrics.infer.update(item.infer_seconds * 1000.0)
+                metrics.render.update(item.render_seconds * 1000.0)
+                metrics.add_speed(getattr(item.result, "speed", None))
+
+                self.output_sink.write(item.frame, item.annotated)
+                if self.show:
+                    self._show_frame(item.annotated, metrics, len(item.detections))
+
+                stats.frames += 1
+                stats.inference_seconds += item.infer_seconds
+                stats.record_detections(item.detections)
+                self.hooks.fire_frame(
+                    FrameEvent(
+                        frame_index=item.frame.info.frame_index,
+                        image=item.frame.image,
+                        annotated=item.annotated,
+                        detections=[_detection_to_dict(det) for det in item.detections],
+                    )
+                )
+                if (
+                    self.hooks.on_progress is not None
+                    and stats.frames % max(1, self.hooks.progress_interval_frames) == 0
+                ):
+                    self.hooks.fire_progress(
+                        ProgressEvent(
+                            frame_index=stats.frames,
+                            total_frames=item.frame.info.total_frames,
+                            elapsed_seconds=time.perf_counter() - start,
+                            loop_fps=metrics.loop.fps,
+                            detections_total=stats.detections,
+                        )
+                    )
+
+                loop_now = time.perf_counter()
+                metrics.loop.update((loop_now - last_loop) * 1000.0)
+                last_loop = loop_now
+
+                if self.max_frames is not None and stats.frames >= self.max_frames:
+                    stats.interrupted = True
+                    stop_event.set()
+                    break
+                if self._cancelled():
+                    stats.interrupted = True
+                    stop_event.set()
+                    break
+
+            if errors:
+                raise errors[0]
+        finally:
+            stop_event.set()
+            for target in (frame_queue, infer_queue, render_queue):
+                put_stop(target, clear=True)
+            for worker in workers:
+                worker.join(timeout=max(self.read_timeout, 0.5))
+            if opened_sink:
+                self.output_sink.close()
+            if self.show:
+                self._close_window()
+
+        stats.wall_seconds = time.perf_counter() - start
+        metric_snapshot = metrics.snapshot()
+        stats.fps = {
+            key: metric_snapshot[key]
+            for key in ("capture_fps", "infer_fps", "render_fps", "loop_fps", "current_fps")
+        }
+        stats.speed_ms = metric_snapshot["speed_ms"]
+        logger.info(
+            "staged inference pipeline finished: frames=%s detections=%s",
+            stats.frames,
+            stats.detections,
+        )
+        return stats
+
     def _cancelled(self) -> bool:
         return self.cancel_token is not None and self.cancel_token.is_cancelled()
 
     def _create_source(self):
-        if not self.threaded:
-            return create_frame_source(self.source, self.camera_config, stride=self.stride)
-        return create_threaded_source(
-            self.source,
-            self.camera_config,
-            stride=self.stride,
-            buffer=self._resolved_source_buffer(),
-            buffer_size=self.buffer_size,
-            read_timeout=self.read_timeout,
-        )
+        return create_frame_source(self.source, self.camera_config, stride=self.stride)
 
     def _resolved_source_buffer(self) -> BufferStrategy | None:
         if not self.threaded:
@@ -221,6 +442,28 @@ class SequentialInferencePipeline:
         if source_type == SourceType.CAMERA:
             return "latest"
         return "bounded"
+
+    @staticmethod
+    def _drain_queue(target: queue.Queue[Any]) -> None:
+        while True:
+            try:
+                target.get_nowait()
+            except queue.Empty:
+                return
+
+    @staticmethod
+    def _get_queue_item(
+        target: queue.Queue[Any],
+        stop_event: threading.Event,
+        *,
+        timeout: float = 0.1,
+    ) -> Any:
+        while not stop_event.is_set():
+            try:
+                return target.get(timeout=timeout)
+            except queue.Empty:
+                return None
+        return _STOP
 
     def _show_frame(self, annotated, metrics: Metrics, detections: int) -> None:
         import cv2

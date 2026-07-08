@@ -39,7 +39,7 @@ odp-infer --model models/trained/steel-defect-yolo11n-2-20260707-122829-yolo11n-
 odp-infer --model models/trained/steel-defect-yolo11n-2-20260707-122829-yolo11n-best/best.pt --source 0 --show --conf 0.25 --device 0 --name steel-camera-demo --threaded
 ```
 
-`odp-infer --threaded` 会启用后台读帧。摄像头源使用 latest 缓冲，优先保证实时显示；视频和图片目录使用 bounded 缓冲，优先保证完整处理不丢帧。
+`odp-infer --threaded` 会启用 D8 多级推理流水线，将读帧、推理、渲染和输出解耦。摄像头源使用 latest 缓冲，优先保证实时显示；视频和图片目录使用 bounded 缓冲，优先保证完整处理不丢帧。
 
 ## 返回码
 

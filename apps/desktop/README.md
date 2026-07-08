@@ -17,8 +17,9 @@ python apps/desktop/main.py
 - 选择模型权重，默认优先查找 `models/trained/**/*best*.pt`。
 - 选择输入源：图片、图片目录、视频，或直接使用摄像头 `0`。
 - 读取 `apps/platform/configs/runtime/infer_pipeline.yaml` 中的 steel 中文类别映射和美化框配置。
+- 可选推理运行配置，并可设置 task、conf、iou、imgsz、max_det、classes、device、name、max_frames。
 - 启动、停止推理，并显示实时画面、FPS、累计检测数量和输出目录。
-- 默认开启“后台读帧”，摄像头源使用 latest 缓冲保证实时性，图片目录/视频源使用 bounded 缓冲保证不丢帧。
+- 默认开启“多级流水线”，复用 D8 `--threaded` 路径；摄像头源使用 latest 缓冲保证实时性，图片目录/视频源使用 bounded 缓冲保证不丢帧。
 - 通过 `QtSignalSink` 和 `InferHooks` 复用 platform 推理服务，不在 UI 层直接实现 YOLO 推理。
 
 ## 输入源
