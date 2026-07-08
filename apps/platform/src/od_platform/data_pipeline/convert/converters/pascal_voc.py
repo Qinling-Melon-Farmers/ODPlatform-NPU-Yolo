@@ -25,6 +25,32 @@ def _class_id(name: str, classes: list[str], discovering: bool) -> int | None:
     return classes.index(name)
 
 
+def _format_yolo_line(
+    cls_id: int,
+    *,
+    xmin: float,
+    ymin: float,
+    xmax: float,
+    ymax: float,
+    image_width: float,
+    image_height: float,
+) -> str | None:
+    clipped_xmin = max(0.0, xmin)
+    clipped_ymin = max(0.0, ymin)
+    clipped_xmax = min(image_width, xmax)
+    clipped_ymax = min(image_height, ymax)
+    box_width = clipped_xmax - clipped_xmin
+    box_height = clipped_ymax - clipped_ymin
+    if box_width <= 0 or box_height <= 0:
+        return None
+
+    center_x = (clipped_xmin + box_width / 2) / image_width
+    center_y = (clipped_ymin + box_height / 2) / image_height
+    norm_width = box_width / image_width
+    norm_height = box_height / image_height
+    return f"{cls_id} {center_x:.6f} {center_y:.6f} {norm_width:.6f} {norm_height:.6f}"
+
+
 @register(AnnotationFormat.PASCAL_VOC, supported_tasks=(Task.DETECT,))
 def convert_voc(input_dir: Path, output_labels_dir: Path, options: ConvertOptions) -> list[str]:
     """将 Pascal VOC XML 目录转换为 YOLO label 目录。
@@ -70,16 +96,19 @@ def convert_voc(input_dir: Path, output_labels_dir: Path, options: ConvertOption
             ymin = float(bbox.findtext("ymin", "0"))
             xmax = float(bbox.findtext("xmax", "0"))
             ymax = float(bbox.findtext("ymax", "0"))
-            box_width = xmax - xmin
-            box_height = ymax - ymin
-            if box_width <= 0 or box_height <= 0:
-                logger.warning("%s 存在非法 bbox，已跳过", xml_path.name)
+            line = _format_yolo_line(
+                cls_id,
+                xmin=xmin,
+                ymin=ymin,
+                xmax=xmax,
+                ymax=ymax,
+                image_width=image_width,
+                image_height=image_height,
+            )
+            if line is None:
+                logger.warning("%s 存在越界后无有效面积的 bbox，已跳过", xml_path.name)
                 continue
-            center_x = (xmin + xmax) / 2 / image_width
-            center_y = (ymin + ymax) / 2 / image_height
-            norm_width = box_width / image_width
-            norm_height = box_height / image_height
-            lines.append(f"{cls_id} {center_x:.6f} {center_y:.6f} {norm_width:.6f} {norm_height:.6f}")
+            lines.append(line)
 
         (output_labels_dir / f"{xml_path.stem}.txt").write_text("\n".join(lines), encoding="utf-8")
 

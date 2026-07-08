@@ -82,6 +82,47 @@ class TestDataPipelineConvert(unittest.TestCase):
                 "1 0.500000 0.250000 0.200000 0.100000",
             )
 
+    def test_pascal_voc_clips_truncated_boxes_to_image_bounds(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            input_dir = root / "annotations"
+            output_dir = root / "labels"
+            input_dir.mkdir()
+            (input_dir / "oiltank_91.xml").write_text(
+                """
+                <annotation>
+                    <size><width>589</width><height>843</height><depth>3</depth></size>
+                    <object>
+                        <name>oiltank</name>
+                        <bndbox>
+                            <xmin>-119</xmin><ymin>265</ymin><xmax>10</xmax><ymax>388</ymax>
+                        </bndbox>
+                    </object>
+                    <object>
+                        <name>oiltank</name>
+                        <bndbox>
+                            <xmin>36</xmin><ymin>252</ymin><xmax>165</xmax><ymax>387</ymax>
+                        </bndbox>
+                    </object>
+                </annotation>
+                """,
+                encoding="utf-8",
+            )
+
+            classes = convert_data_to_yolo(
+                input_dir=input_dir,
+                output_labels_dir=output_dir,
+                annotation_format=AnnotationFormat.PASCAL_VOC,
+                options=ConvertOptions(task=Task.DETECT),
+            )
+
+            self.assertEqual(classes, ["oiltank"])
+            lines = (output_dir / "oiltank_91.txt").read_text(encoding="utf-8").splitlines()
+            self.assertEqual(lines[0], "0 0.008489 0.387307 0.016978 0.145907")
+            for line in lines:
+                coords = [float(value) for value in line.split()[1:]]
+                self.assertTrue(all(0.0 <= value <= 1.0 for value in coords))
+
     def test_yolo_converter_rejects_invalid_range(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             root = Path(temp_dir)
