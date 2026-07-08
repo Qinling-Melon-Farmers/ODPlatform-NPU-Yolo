@@ -40,11 +40,14 @@ odp-train --yaml train --data steel-surface-defect --model yolo11n.pt --epochs 1
 # 模型评估，区别于 odp-validate 数据质检
 odp-val --config val --model models/trained/steel-defect-yolo11n-2-20260707-122829-yolo11n-best/best.pt --data steel-surface-defect --device 0
 
-# 推理；默认会读取 apps/platform/configs/runtime/infer_pipeline.yaml 的 steel 中文标签映射
-odp-infer --model models/trained/steel-defect-yolo11n-2-20260707-122829-yolo11n-best/best.pt --source data/processed/steel-surface-defect/test/images --conf 0.25 --device 0 --name steel-defect-test
+# 图片目录推理；默认读取 apps/platform/configs/runtime/infer_pipeline.yaml 的 steel 中文标签映射
+odp-infer --model models/trained/steel-defect-yolo11n-2-20260707-122829-yolo11n-best/best.pt --source data/processed/steel-surface-defect/test/images --conf 0.25 --device 0 --name steel-defect-test --threaded
 
-# 摄像头实时推理
-odp-infer --model models/trained/steel-defect-yolo11n-2-20260707-122829-yolo11n-best/best.pt --source 0 --show --conf 0.25 --device 0 --name steel-camera-demo
+# 视频文件推理；threaded 模式对文件源使用 bounded 缓冲，优先保证不丢帧
+odp-infer --model models/trained/steel-defect-yolo11n-2-20260707-122829-yolo11n-best/best.pt --source demo.mp4 --conf 0.25 --device 0 --name steel-video-demo --threaded
+
+# 摄像头实时推理；threaded 模式对摄像头使用 latest 缓冲，优先保证实时性
+odp-infer --model models/trained/steel-defect-yolo11n-2-20260707-122829-yolo11n-best/best.pt --source 0 --show --conf 0.25 --device 0 --name steel-camera-demo --threaded
 ```
 
 ## CLI 一览
@@ -72,7 +75,7 @@ pip install -r apps/desktop/requirements.txt
 python apps/desktop/main.py
 ```
 
-界面默认优先查找 `models/trained/**/*best*.pt`，并读取 `apps/platform/configs/runtime/infer_pipeline.yaml` 中的 steel 中文类别映射。`odplat` 当前若未安装 PySide6，运行时会给出明确安装提示。
+界面默认优先查找 `models/trained/**/*best*.pt`，并读取 `apps/platform/configs/runtime/infer_pipeline.yaml` 中的 steel 中文类别映射。输入源支持图片、视频、图片文件夹和摄像头；“后台读帧”默认开启，复用 D8 `--threaded` 推理路径。
 
 ## 模块边界
 
@@ -93,8 +96,8 @@ python apps/desktop/main.py
 
 ## 后续重点
 
-- D8 推理继续增强 pipeline / hook / sink 的扩展点，服务桌面端复用。
-- 桌面端后续增加评估结果、数据质检报告和训练曲线浏览。
+- D8 推理流水线当前已具备 CLI、service、hook、sink、cancel、threaded frame source 和审计闭环。
+- 桌面端后续增加暂停/继续、评估结果、数据质检报告和训练曲线浏览。
 - Web 后端仍是预留目录，尚未进入当前阶段主线。
 
 ## 验证

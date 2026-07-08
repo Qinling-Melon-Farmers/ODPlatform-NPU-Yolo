@@ -34,9 +34,12 @@ odp-train --yaml train --data steel-surface-defect --model yolo11n.pt --epochs 1
 odp-gen-config val --force
 odp-val --config val --model models/trained/steel-defect-yolo11n-2-20260707-122829-yolo11n-best/best.pt --data steel-surface-defect --device 0
 
-odp-infer --model models/trained/steel-defect-yolo11n-2-20260707-122829-yolo11n-best/best.pt --source data/processed/steel-surface-defect/test/images --conf 0.25 --device 0 --name steel-defect-test
-odp-infer --model models/trained/steel-defect-yolo11n-2-20260707-122829-yolo11n-best/best.pt --source 0 --show --conf 0.25 --device 0 --name steel-camera-demo
+odp-infer --model models/trained/steel-defect-yolo11n-2-20260707-122829-yolo11n-best/best.pt --source data/processed/steel-surface-defect/test/images --conf 0.25 --device 0 --name steel-defect-test --threaded
+odp-infer --model models/trained/steel-defect-yolo11n-2-20260707-122829-yolo11n-best/best.pt --source demo.mp4 --conf 0.25 --device 0 --name steel-video-demo --threaded
+odp-infer --model models/trained/steel-defect-yolo11n-2-20260707-122829-yolo11n-best/best.pt --source 0 --show --conf 0.25 --device 0 --name steel-camera-demo --threaded
 ```
+
+`odp-infer --threaded` 会启用后台读帧。摄像头源使用 latest 缓冲，优先保证实时显示；视频和图片目录使用 bounded 缓冲，优先保证完整处理不丢帧。
 
 ## 返回码
 

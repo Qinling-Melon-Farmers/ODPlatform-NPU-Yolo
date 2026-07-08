@@ -8,7 +8,14 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
-from od_platform.frame_source import CameraConfig, create_frame_source
+from od_platform.frame_source import (
+    BufferStrategy,
+    CameraConfig,
+    SourceType,
+    create_frame_source,
+    create_threaded_source,
+    detect_source_type,
+)
 from od_platform.inference.cancel import CancelToken
 from od_platform.inference.hooks import FrameEvent, InferHooks, ProgressEvent
 from od_platform.inference.overlay import Metrics, draw_hud
@@ -30,6 +37,8 @@ class InferStats:
     interrupted: bool = False
     fps: dict[str, float] = field(default_factory=dict)
     speed_ms: dict[str, float] = field(default_factory=dict)
+    source_mode: str = "sequential"
+    source_buffer: str | None = None
 
     @property
     def avg_fps(self) -> float:
@@ -56,6 +65,8 @@ class InferStats:
             "interrupted": self.interrupted,
             "fps": self.fps,
             "speed_ms": self.speed_ms,
+            "source_mode": self.source_mode,
+            "source_buffer": self.source_buffer,
         }
 
 
@@ -76,6 +87,10 @@ class SequentialInferencePipeline:
         window_name: str,
         warmup_frames: int = 0,
         stride: int = 1,
+        threaded: bool = False,
+        source_buffer: BufferStrategy | None = None,
+        buffer_size: int = 8,
+        read_timeout: float = 5.0,
         hooks: InferHooks | None = None,
         cancel_token: CancelToken | None = None,
         max_frames: int | None = None,
@@ -91,6 +106,10 @@ class SequentialInferencePipeline:
         self.window_name = window_name
         self.warmup_frames = max(0, warmup_frames)
         self.stride = max(1, stride)
+        self.threaded = threaded
+        self.source_buffer = source_buffer
+        self.buffer_size = max(1, buffer_size)
+        self.read_timeout = max(0.1, read_timeout)
         self.hooks = hooks or InferHooks()
         self.cancel_token = cancel_token
         self.max_frames = max_frames
@@ -103,7 +122,9 @@ class SequentialInferencePipeline:
         opened_sink = False
 
         try:
-            with create_frame_source(self.source, self.camera_config, stride=self.stride) as source:
+            with self._create_source() as source:
+                stats.source_mode = "threaded" if self.threaded else "sequential"
+                stats.source_buffer = self._resolved_source_buffer()
                 self.output_sink.open(self.output_dir, source.get_source_type())
                 opened_sink = True
                 for frame in source:
@@ -178,6 +199,28 @@ class SequentialInferencePipeline:
 
     def _cancelled(self) -> bool:
         return self.cancel_token is not None and self.cancel_token.is_cancelled()
+
+    def _create_source(self):
+        if not self.threaded:
+            return create_frame_source(self.source, self.camera_config, stride=self.stride)
+        return create_threaded_source(
+            self.source,
+            self.camera_config,
+            stride=self.stride,
+            buffer=self._resolved_source_buffer(),
+            buffer_size=self.buffer_size,
+            read_timeout=self.read_timeout,
+        )
+
+    def _resolved_source_buffer(self) -> BufferStrategy | None:
+        if not self.threaded:
+            return None
+        if self.source_buffer is not None:
+            return self.source_buffer
+        source_type = detect_source_type(self.source)
+        if source_type == SourceType.CAMERA:
+            return "latest"
+        return "bounded"
 
     def _show_frame(self, annotated, metrics: Metrics, detections: int) -> None:
         import cv2

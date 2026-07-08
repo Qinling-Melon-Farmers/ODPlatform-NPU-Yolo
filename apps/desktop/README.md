@@ -18,7 +18,15 @@ python apps/desktop/main.py
 - 选择输入源：图片、图片目录、视频，或直接使用摄像头 `0`。
 - 读取 `apps/platform/configs/runtime/infer_pipeline.yaml` 中的 steel 中文类别映射和美化框配置。
 - 启动、停止推理，并显示实时画面、FPS、累计检测数量和输出目录。
+- 默认开启“后台读帧”，摄像头源使用 latest 缓冲保证实时性，图片目录/视频源使用 bounded 缓冲保证不丢帧。
 - 通过 `QtSignalSink` 和 `InferHooks` 复用 platform 推理服务，不在 UI 层直接实现 YOLO 推理。
+
+## 输入源
+
+- 图片：点击“图片/视频”选择 `.jpg`、`.png`、`.bmp`、`.webp` 等文件。
+- 视频：点击“图片/视频”选择 `.mp4`、`.avi`、`.mkv`、`.mov` 等文件。
+- 图片目录：点击“文件夹”选择包含图片的目录。
+- 摄像头：点击“摄像头 0”，或手动输入其他摄像头编号。
 
 ## 技术边界
 
@@ -30,13 +38,14 @@ python apps/desktop/main.py
 
 ## 后续开发
 
-1. 将当前演示窗口扩展为工作台式布局：模型、输入源、运行状态、检测统计分区展示。
-2. 增加评估结果浏览，读取 `runs/evaluation/**/odp_audit.json`。
-3. 增加数据质检报告浏览，读取 `runs/data_validation/**/report.md` 与 `report.json`。
-4. 增加训练结果浏览，展示 `results.csv` 曲线和归档权重信息。
+1. 增加暂停/继续按钮。
+2. 将当前演示窗口扩展为工作台式布局：模型、输入源、运行状态、检测统计分区展示。
+3. 增加评估结果浏览，读取 `runs/evaluation/**/odp_audit.json`。
+4. 增加数据质检报告浏览，读取 `runs/data_validation/**/report.md` 与 `report.json`。
+5. 增加训练结果浏览，展示 `results.csv` 曲线和归档权重信息。
 
 ## 验收标准
 
-- 桌面端能使用同一份 steel best 权重完成图片或摄像头推理。
+- 桌面端能使用同一份 steel best 权重完成图片、图片目录、视频或摄像头推理。
 - 关闭窗口或点击停止后能释放摄像头资源。
 - UI 代码不 import Ultralytics 训练逻辑，不复制 platform 的业务代码。

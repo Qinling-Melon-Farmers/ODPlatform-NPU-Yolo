@@ -270,6 +270,115 @@ visualization:
             self.assertEqual(payload["stats"]["frames"], 1)
             self.assertEqual(payload["stats"]["detections"], 1)
 
+    def test_infer_cli_threaded_video_uses_bounded_buffer(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            model_path = root / "best.pt"
+            source_path = root / "demo.mp4"
+            model_path.write_bytes(b"model")
+            source_path.write_bytes(b"video")
+            captured: dict[str, object] = {}
+
+            class FakeBoxes:
+                data = np.array([[1, 2, 30, 40, 0.91, 0]], dtype=float)
+
+            class FakeResult:
+                boxes = FakeBoxes()
+                names = {0: "scratch"}
+                speed = {"preprocess": 1.0, "inference": 2.0, "postprocess": 3.0}
+
+                def plot(self):
+                    return np.zeros((20, 30, 3), dtype=np.uint8)
+
+            class FakeYOLO:
+                names = {0: "scratch"}
+
+                def __init__(self, model: str) -> None:
+                    self.model = model
+
+                def __call__(self, image, **kwargs):
+                    return [FakeResult()]
+
+            class FakeThreadedSource:
+                def __init__(
+                    self,
+                    source,
+                    camera_config=None,
+                    *,
+                    stride=1,
+                    buffer="latest",
+                    buffer_size=1,
+                    read_timeout=5.0,
+                    **_options,
+                ):
+                    captured["source"] = source
+                    captured["buffer"] = buffer
+                    captured["buffer_size"] = buffer_size
+                    captured["read_timeout"] = read_timeout
+                    self._done = False
+
+                def __enter__(self):
+                    return self
+
+                def __exit__(self, exc_type, exc_value, exc_tb):
+                    return False
+
+                def __iter__(self):
+                    return self
+
+                def __next__(self):
+                    if self._done:
+                        raise StopIteration
+                    self._done = True
+                    from od_platform.frame_source import Frame, FrameInfo
+
+                    return Frame(
+                        image=np.zeros((20, 30, 3), dtype=np.uint8),
+                        info=FrameInfo(
+                            width=30,
+                            height=20,
+                            source_type=SourceType.VIDEO,
+                            source_path=str(source_path),
+                            filename="demo.mp4",
+                            fps=30.0,
+                            total_frames=1,
+                        ),
+                    )
+
+                def get_source_type(self):
+                    return SourceType.VIDEO
+
+            fake_ultralytics = types.SimpleNamespace(YOLO=FakeYOLO, __version__="test")
+            with (
+                self._patch_inference_paths(root),
+                patch.dict(sys.modules, {"ultralytics": fake_ultralytics}),
+                patch("od_platform.inference.pipeline.create_threaded_source", FakeThreadedSource),
+            ):
+                try:
+                    code = infer_main(
+                        [
+                            "--model",
+                            str(model_path),
+                            "--source",
+                            str(source_path),
+                            "--name",
+                            "threaded-video",
+                            "--max-frames",
+                            "1",
+                            "--no-save",
+                            "--threaded",
+                        ]
+                    )
+                finally:
+                    self._close_project_logger()
+
+            self.assertEqual(code, 0)
+            self.assertEqual(captured["buffer"], "bounded")
+            audit = root / "runs" / "inference" / "detect" / "threaded-video" / "odp_audit.json"
+            payload = json.loads(audit.read_text(encoding="utf-8"))
+            self.assertEqual(payload["stats"]["source_mode"], "threaded")
+            self.assertEqual(payload["stats"]["source_buffer"], "bounded")
+
 
 if __name__ == "__main__":
     unittest.main()

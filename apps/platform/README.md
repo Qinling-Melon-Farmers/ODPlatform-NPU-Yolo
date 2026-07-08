@@ -33,7 +33,8 @@ odp-transform --dataset steel-surface-defect --format pascal_voc --task detect
 odp-validate --dataset steel-surface-defect --executor your-name
 odp-train --yaml train --data steel-surface-defect --model yolo11n.pt --epochs 100 --batch 16 --imgsz 640 --device 0 --workers 4 --name steel-defect-yolo11n
 odp-val --config val --model models/trained/steel-defect-yolo11n-2-20260707-122829-yolo11n-best/best.pt --data steel-surface-defect --device 0
-odp-infer --model models/trained/steel-defect-yolo11n-2-20260707-122829-yolo11n-best/best.pt --source data/processed/steel-surface-defect/test/images --conf 0.25 --device 0 --name steel-defect-test
+odp-infer --model models/trained/steel-defect-yolo11n-2-20260707-122829-yolo11n-best/best.pt --source data/processed/steel-surface-defect/test/images --conf 0.25 --device 0 --name steel-defect-test --threaded
+odp-infer --model models/trained/steel-defect-yolo11n-2-20260707-122829-yolo11n-best/best.pt --source demo.mp4 --conf 0.25 --device 0 --name steel-video-demo --threaded
 ```
 
 ## 模块边界
@@ -46,7 +47,7 @@ odp-infer --model models/trained/steel-defect-yolo11n-2-20260707-122829-yolo11n-
 - `evaluation`：模型评估，提供 `odp-val`，只产出指标和审计，不归档权重。
 - `frame_source`：图片、图片文件夹、视频、摄像头输入源。
 - `visualization`：检测框美化、中文标签映射、颜色映射。
-- `inference`：推理执行、逐帧 pipeline、hook、sink、HUD 和审计。
+- `inference`：推理执行、逐帧 pipeline、threaded frame source、hook、sink、HUD 和审计。
 
 ## 验证
 

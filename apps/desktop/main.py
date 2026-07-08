@@ -28,7 +28,7 @@ try:
         QVBoxLayout,
         QWidget,
     )
-except ImportError as exc:  # pragma: no cover - exercised only when optional UI deps are absent.
+except ImportError as exc:  # pragma: no cover - optional desktop dependencies.
     print(
         "桌面端需要 PySide6 和 opencv-python。请在 odplat 环境中安装后再运行：\n"
         "  conda activate odplat\n"
@@ -42,7 +42,7 @@ from infer_worker import InferWorker  # noqa: E402
 
 
 class MainWindow(QMainWindow):
-    """Small operator UI for image, video, folder and camera inference."""
+    """Small operator UI for image, folder, video and camera inference."""
 
     def __init__(self) -> None:
         super().__init__()
@@ -61,6 +61,8 @@ class MainWindow(QMainWindow):
         self.max_frames_spin.setRange(0, 1_000_000)
         self.max_frames_spin.setSpecialValueText("不限")
         self.save_check = QCheckBox("保存推理结果")
+        self.threaded_check = QCheckBox("后台读帧")
+        self.threaded_check.setChecked(True)
 
         self.start_button = QPushButton("启动")
         self.stop_button = QPushButton("停止")
@@ -81,14 +83,25 @@ class MainWindow(QMainWindow):
 
     def _build_layout(self) -> None:
         form = QFormLayout()
-        form.addRow("模型", _with_browse(self.model_edit, self._browse_model))
-        form.addRow("输入源", _with_browse(self.source_edit, self._browse_source, extra=("摄像头 0", self._use_camera)))
-        form.addRow("Pipeline", _with_browse(self.pipeline_edit, self._browse_pipeline))
+        form.addRow("模型", _with_buttons(self.model_edit, [("选择权重", self._browse_model)]))
+        form.addRow(
+            "输入源",
+            _with_buttons(
+                self.source_edit,
+                [
+                    ("图片/视频", self._browse_media_source),
+                    ("文件夹", self._browse_folder_source),
+                    ("摄像头 0", self._use_camera),
+                ],
+            ),
+        )
+        form.addRow("Pipeline", _with_buttons(self.pipeline_edit, [("选择 YAML", self._browse_pipeline)]))
         form.addRow("置信度", self.conf_edit)
         form.addRow("设备", self.device_edit)
         form.addRow("运行名", self.name_edit)
         form.addRow("最多帧数", self.max_frames_spin)
         form.addRow("", self.save_check)
+        form.addRow("", self.threaded_check)
 
         controls = QHBoxLayout()
         controls.addWidget(self.start_button)
@@ -131,6 +144,7 @@ class MainWindow(QMainWindow):
             name=self.name_edit.text().strip() or "desktop-infer",
             pipeline_yaml=self.pipeline_edit.text().strip() or None,
             save_outputs=self.save_check.isChecked(),
+            threaded=self.threaded_check.isChecked(),
             max_frames=self.max_frames_spin.value() or None,
         )
         self._worker.moveToThread(self._thread)
@@ -192,20 +206,21 @@ class MainWindow(QMainWindow):
         self.stop_button.setEnabled(False)
 
     def _browse_model(self) -> None:
-        path, _ = QFileDialog.getOpenFileName(self, "选择模型", str(ROOT_DIR), "PyTorch weights (*.pt);;All files (*)")
+        path, _ = QFileDialog.getOpenFileName(self, "选择模型权重", str(ROOT_DIR), "PyTorch weights (*.pt);;All files (*)")
         if path:
             self.model_edit.setText(path)
 
-    def _browse_source(self) -> None:
+    def _browse_media_source(self) -> None:
         path, _ = QFileDialog.getOpenFileName(
             self,
             "选择图片或视频",
             str(ROOT_DIR),
-            "Media files (*.jpg *.jpeg *.png *.bmp *.webp *.mp4 *.avi *.mkv *.mov);;All files (*)",
+            "Media files (*.jpg *.jpeg *.png *.bmp *.webp *.mp4 *.avi *.mkv *.mov *.flv *.wmv);;All files (*)",
         )
         if path:
             self.source_edit.setText(path)
-            return
+
+    def _browse_folder_source(self) -> None:
         directory = QFileDialog.getExistingDirectory(self, "选择图片文件夹", str(ROOT_DIR))
         if directory:
             self.source_edit.setText(directory)
@@ -219,18 +234,14 @@ class MainWindow(QMainWindow):
         self.source_edit.setText("0")
 
 
-def _with_browse(line_edit: QLineEdit, callback, *, extra: tuple[str, object] | None = None) -> QWidget:
+def _with_buttons(line_edit: QLineEdit, buttons: list[tuple[str, object]]) -> QWidget:
     container = QWidget()
     layout = QHBoxLayout(container)
     layout.setContentsMargins(0, 0, 0, 0)
     layout.addWidget(line_edit)
-    browse = QPushButton("浏览")
-    browse.clicked.connect(callback)
-    layout.addWidget(browse)
-    if extra is not None:
-        label, extra_callback = extra
+    for label, callback in buttons:
         button = QPushButton(label)
-        button.clicked.connect(extra_callback)
+        button.clicked.connect(callback)
         layout.addWidget(button)
     return container
 

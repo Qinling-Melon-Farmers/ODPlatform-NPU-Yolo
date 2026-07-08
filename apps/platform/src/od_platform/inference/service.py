@@ -187,7 +187,7 @@ class InferService:
         max_frames: int | None = None,
     ) -> InferResult:
         """Run frame-by-frame inference and return an error result instead of raising."""
-        del threaded, rename_log
+        del rename_log
         hooks = hooks or InferHooks()
         start = perf_counter()
         output_dir = paths.INFERENCE_RUNS_DIR / "unknown" / "failed"
@@ -211,6 +211,7 @@ class InferService:
                 run_logger.info("source ref: %s", source_ref)
                 run_logger.info("output dir: %s", output_dir)
                 run_logger.info("beautify: %s", beautify and pipe_config.viz_enabled)
+                run_logger.info("threaded source: %s", threaded)
                 _log_effective_config(config, run_logger, config_source=Path(yaml_path) if yaml_path else None)
 
                 from ultralytics import YOLO
@@ -239,6 +240,7 @@ class InferService:
                     window_name=window_name,
                     warmup_frames=warmup_frames,
                     stride=config.vid_stride,
+                    threaded=threaded,
                     hooks=hooks,
                     cancel_token=cancel_token,
                     max_frames=max_frames,

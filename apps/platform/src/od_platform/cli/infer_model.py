@@ -39,6 +39,11 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--no-viz", action="store_true", help="Disable beautified rendering and use native YOLO plot().")
     parser.add_argument("--no-hud", action="store_true", help="Disable FPS and status HUD on display windows.")
     parser.add_argument("--warmup", type=int, default=0, help="Skip first N frames after opening the source.")
+    parser.add_argument(
+        "--threaded",
+        action="store_true",
+        help="Read frames in a background thread. Camera uses latest-frame buffer; file sources use bounded buffer.",
+    )
     parser.add_argument("--max-frames", type=int, help="Stop after N processed frames; useful for smoke tests.")
     parser.add_argument("--window-name", default="odp-infer", help="OpenCV window title when --show is enabled.")
     parser.add_argument(
@@ -132,6 +137,7 @@ def main(argv: list[str] | None = None) -> int:
             cli_args=_pipeline_cli_args(args),
             beautify=not args.no_viz,
             warmup_frames=args.warmup,
+            threaded=args.threaded,
             window_name=args.window_name,
             show_info=not args.no_hud,
             max_frames=args.max_frames,

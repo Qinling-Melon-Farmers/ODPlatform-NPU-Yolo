@@ -28,6 +28,7 @@ class InferWorker(QObject):
         name: str,
         pipeline_yaml: str | None = None,
         save_outputs: bool = False,
+        threaded: bool = True,
         max_frames: int | None = None,
     ) -> None:
         super().__init__()
@@ -39,6 +40,7 @@ class InferWorker(QObject):
         self._name = name
         self._pipeline_yaml = pipeline_yaml
         self._save_outputs = save_outputs
+        self._threaded = threaded
         self._max_frames = max_frames
 
     @Slot()
@@ -86,5 +88,6 @@ class InferWorker(QObject):
             output_sink=sink,
             hooks=hooks,
             cancel_token=self._cancel_token,
+            threaded=self._threaded,
             max_frames=self._max_frames,
         )
