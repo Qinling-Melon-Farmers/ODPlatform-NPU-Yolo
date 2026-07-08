@@ -6,6 +6,7 @@ import json
 import logging
 import re
 import shutil
+import sys
 from dataclasses import dataclass, replace
 from datetime import datetime
 from pathlib import Path
@@ -15,6 +16,7 @@ from typing import Any
 import yaml
 
 from od_platform.common import paths
+from od_platform.common.logging_utils import build_console_formatter, build_file_formatter
 from od_platform.common.refs import resolve_model, resolve_yaml
 from od_platform.common.string_utils import pad_to_width
 from od_platform.common.system_utils import get_basic_device_info
@@ -368,15 +370,12 @@ def _configure_training_logger(log_file: Path) -> logging.Logger:
     run_logger.handlers.clear()
     run_logger.setLevel(logging.INFO)
     run_logger.propagate = False
-    formatter = logging.Formatter(
-        "%(asctime)s - %(levelname)-8s - %(name)s - %(message)s",
-        datefmt="%Y-%m-%d %H:%M:%S",
-    )
+    file_formatter = build_file_formatter("%(asctime)s - %(levelname)-8s - %(name)s - %(message)s")
     file_handler = logging.FileHandler(log_file, encoding="utf-8")
-    file_handler.setFormatter(formatter)
+    file_handler.setFormatter(file_formatter)
     run_logger.addHandler(file_handler)
-    stream_handler = logging.StreamHandler()
-    stream_handler.setFormatter(formatter)
+    stream_handler = logging.StreamHandler(sys.stdout)
+    stream_handler.setFormatter(build_console_formatter())
     run_logger.addHandler(stream_handler)
     return run_logger
 

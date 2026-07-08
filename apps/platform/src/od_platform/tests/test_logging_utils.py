@@ -4,6 +4,8 @@ import unittest
 from pathlib import Path
 
 from od_platform.common.logging_utils import (
+    build_console_formatter,
+    build_file_formatter,
     format_log_rule,
     format_log_section,
     format_status_label,
@@ -45,6 +47,24 @@ class TestLoggingUtils(unittest.TestCase):
 
         self.assertNotIn("\x1b[", content)
         self.assertIn("plain file log message", content)
+
+    def test_console_formatter_emits_ansi_but_file_formatter_does_not(self) -> None:
+        record = logging.LogRecord(
+            name="od_platform.tests.logging_utils.record",
+            level=logging.WARNING,
+            pathname=__file__,
+            lineno=1,
+            msg="colored console message",
+            args=(),
+            exc_info=None,
+        )
+
+        console_text = build_console_formatter().format(record)
+        file_text = build_file_formatter().format(record)
+
+        self.assertIn("\x1b[", console_text)
+        self.assertNotIn("\x1b[", file_text)
+        self.assertIn("colored console message", console_text)
 
 
 if __name__ == "__main__":

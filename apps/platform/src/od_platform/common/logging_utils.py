@@ -34,46 +34,25 @@ def format_status_label(status: str) -> str:
     return labels.get(status, f"[{status.upper()}]")
 
 
-def get_logger(
-    base_path: Path,
-    log_type: str = "general",
-    model_name: str | None = None,
-    log_level: int = logging.INFO,
-    temp_log: bool = False,
-    encoding: str = "utf-8",
-    logger_name: str = ROOT_LOGGER_NAME,
-) -> logging.Logger:
-    """Configure the project root logger with console and file handlers."""
-    logger = logging.getLogger(logger_name)
-    if logger.handlers:
-        return logger
+def build_file_formatter(fmt: str | None = None) -> logging.Formatter:
+    """Build a plain text formatter for log files.
 
-    logger.setLevel(log_level)
-    logger.propagate = False
-
-    log_dir: Path = base_path / log_type
-    log_dir.mkdir(parents=True, exist_ok=True)
-
-    timestamp: str = datetime.now().strftime("%Y%m%d-%H%M%S-%f")[:21]
-    prefix = "temp" if temp_log else log_type.replace("_", "-")
-
-    filename_parts = [prefix, timestamp]
-    if model_name:
-        safe_model = "".join(c if c.isalnum() or c in "_-" else "_" for c in model_name)
-        filename_parts.append(safe_model)
-    log_file: Path = log_dir / ("_".join(filename_parts) + ".log")
-
-    file_formatter = logging.Formatter(
-        fmt="%(asctime)s - %(name)s - %(levelname)-8s - "
-        "%(filename)s:%(lineno)d - %(funcName)s - %(message)s",
+    File logs must stay free of ANSI escape sequences so that they remain easy
+    to search, archive, and parse.
+    """
+    return logging.Formatter(
+        fmt=fmt
+        or (
+            "%(asctime)s - %(name)s - %(levelname)-8s - "
+            "%(filename)s:%(lineno)d - %(funcName)s - %(message)s"
+        ),
         datefmt="%Y-%m-%d %H:%M:%S",
     )
-    file_handler = logging.FileHandler(log_file, encoding=encoding)
-    file_handler.setLevel(log_level)
-    file_handler.setFormatter(file_formatter)
-    logger.addHandler(file_handler)
 
-    console_formatter = ColoredFormatter(
+
+def build_console_formatter() -> ColoredFormatter:
+    """Build the shared colored formatter used by CLI console logs."""
+    return ColoredFormatter(
         "%(log_color)s%(asctime)s%(reset)s "
         "%(level_log_color)s[%(levelname)-8s]%(reset)s "
         "%(thin_white)s%(filename)-24s%(reset)s:"
@@ -106,6 +85,44 @@ def get_logger(
         },
         style="%",
     )
+
+
+def get_logger(
+    base_path: Path,
+    log_type: str = "general",
+    model_name: str | None = None,
+    log_level: int = logging.INFO,
+    temp_log: bool = False,
+    encoding: str = "utf-8",
+    logger_name: str = ROOT_LOGGER_NAME,
+) -> logging.Logger:
+    """Configure the project root logger with console and file handlers."""
+    logger = logging.getLogger(logger_name)
+    if logger.handlers:
+        return logger
+
+    logger.setLevel(log_level)
+    logger.propagate = False
+
+    log_dir: Path = base_path / log_type
+    log_dir.mkdir(parents=True, exist_ok=True)
+
+    timestamp: str = datetime.now().strftime("%Y%m%d-%H%M%S-%f")[:21]
+    prefix = "temp" if temp_log else log_type.replace("_", "-")
+
+    filename_parts = [prefix, timestamp]
+    if model_name:
+        safe_model = "".join(c if c.isalnum() or c in "_-" else "_" for c in model_name)
+        filename_parts.append(safe_model)
+    log_file: Path = log_dir / ("_".join(filename_parts) + ".log")
+
+    file_formatter = build_file_formatter()
+    file_handler = logging.FileHandler(log_file, encoding=encoding)
+    file_handler.setLevel(log_level)
+    file_handler.setFormatter(file_formatter)
+    logger.addHandler(file_handler)
+
+    console_formatter = build_console_formatter()
     if hasattr(sys.stdout, "reconfigure"):
         try:
             sys.stdout.reconfigure(encoding=encoding, errors="replace")
