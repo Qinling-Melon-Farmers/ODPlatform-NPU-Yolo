@@ -1,6 +1,6 @@
 # Platform 端
 
-`apps/platform` 是 ODPlatform 的核心 Python 包，包名为 `od_platform`。当前承载命令行工具、数据流水线、数据质检、运行配置、训练、推理和统一帧输入源。
+`apps/platform` 是 ODPlatform 的核心 Python 包，包名为 `od_platform`。当前承载命令行工具、数据流水线、数据质检、运行配置、训练、推理、推理可视化和统一帧输入源。
 
 ## 安装
 
@@ -32,6 +32,7 @@ pip install -e ./apps/platform
 - `training`：训练执行、日志、审计、权重归档、结果可视化。
 - `inference`：推理执行、结果摘要和审计。
 - `frame_source`：图片、图片文件夹、视频、摄像头输入源。
+- `visualization`：检测结果美化绘制，支持中文标签映射、圆角框、Pillow 文本渲染和字体尺寸缓存。
 
 ## 日志
 

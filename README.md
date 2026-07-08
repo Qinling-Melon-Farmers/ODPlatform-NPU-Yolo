@@ -1,6 +1,6 @@
 # ODPlatform
 
-ODPlatform 是生产实习阶段构建的目标检测开发平台，当前重点覆盖数据集导入、格式转换、数据质检、训练、推理、训练结果可视化，以及图片/视频/摄像头统一输入源。
+ODPlatform 是生产实习阶段构建的目标检测开发平台，当前重点覆盖数据集导入、格式转换、数据质检、训练、推理、训练结果可视化、推理结果美化绘制，以及图片/视频/摄像头统一输入源。
 
 ## 当前状态
 
@@ -60,6 +60,7 @@ odp-plot-training runs/detect/train/results.csv --output runs/detect/train/train
 - `training/`：YOLO 训练、训练产物审计、权重归档、结果图表。
 - `inference/`：YOLO 推理、审计清单和结果摘要。
 - `frame_source/`：图片、图片文件夹、视频、摄像头四类输入源，支持同步、线程和异步包装。
+- `visualization/`：YOLO 检测框美化绘制，支持中文标签、颜色映射、圆角框和文本尺寸缓存。
 
 ## 兼容说明
 
