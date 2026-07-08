@@ -79,12 +79,13 @@ python apps/desktop/main.py
 
 界面默认优先查找 `models/trained/**/*best*.pt`，并读取 `apps/platform/configs/runtime/infer_pipeline.yaml` 中的 steel 中文类别映射。输入源支持图片、视频、图片文件夹和摄像头；“多级流水线”默认开启，复用 D8 `--threaded` 推理路径。桌面端当前已接入 runtime 配置、pipeline 配置、task、conf、iou、imgsz、max_det、classes、device、name、max_frames 等主要推理参数，并支持暂停/继续、停止、打开输出目录、实时日志和统计摘要。
 
-桌面端当前是工作台第一版，包含四个页面：
+桌面端当前是工作台第一版，包含五个页面：
 
 - 推理：调用 D8 pipeline 完成图片、目录、视频、摄像头推理。
-- 模型评估：浏览 `runs/evaluation/**/odp_audit.json`。
-- 数据质检：浏览 `runs/data_validation/**/report.md` 或 `report.json`。
-- 训练结果：浏览 `runs/**/results.csv`、最后一轮指标、可用图表和对应权重摘要。
+- 模型评估：筛选和浏览 `runs/evaluation/**/odp_audit.json`。
+- 数据质检：筛选和浏览 `runs/data_validation/**/report.md` 或 `report.json`。
+- 训练结果：筛选和浏览 `runs/**/results.csv`、最后一轮指标、曲线图预览和对应权重摘要。
+- 任务启动：按任务类型切换参数页，通过后台子进程调用现有 CLI，覆盖数据导入、转换、质检、评估和训练；训练默认 dry-run，避免误触发长任务。
 
 ## 模块边界
 
@@ -97,7 +98,7 @@ python apps/desktop/main.py
 - `frame_source/`：图片、图片文件夹、视频、摄像头统一帧输入源。
 - `visualization/`：中文标签、颜色映射、圆角框、Pillow 文本渲染和尺寸缓存。
 - `inference/`：D8 推理服务、逐帧与多级流水线、hook、sink、HUD、审计输出。
-- `apps/desktop/`：PySide6 桌面端推理演示，只调用 platform 服务层。
+- `apps/desktop/`：PySide6 桌面端工作台，只调用 platform 服务层和 CLI 入口。
 
 ## 根目录参考资产说明
 
@@ -106,7 +107,7 @@ python apps/desktop/main.py
 ## 后续重点
 
 - D8 推理流水线当前已具备 CLI、service、hook、sink、cancel、pause/resume、多级流水线和审计闭环。
-- 桌面端后续增加运行历史筛选、训练/评估/质检任务启动表单，以及更完整的训练曲线图预览。
+- 桌面端后续增加本地产物安全删除、更多任务参数分组，以及训练曲线多 run 对比。
 - Web 后端仍是预留目录，尚未进入当前阶段主线。
 
 ## 验证

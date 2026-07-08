@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import csv
 import json
+import shlex
 import sys
 from pathlib import Path
 from typing import Any
@@ -34,6 +35,7 @@ try:
         QPushButton,
         QSpinBox,
         QSplitter,
+        QStackedWidget,
         QTabWidget,
         QTextEdit,
         QVBoxLayout,
@@ -50,6 +52,7 @@ except ImportError as exc:  # pragma: no cover - optional desktop dependencies.
     raise SystemExit(2) from exc
 
 from infer_worker import InferWorker  # noqa: E402
+from task_worker import CommandWorker  # noqa: E402
 
 
 class MainWindow(QMainWindow):
@@ -61,7 +64,11 @@ class MainWindow(QMainWindow):
         self.resize(1440, 900)
         self._thread: QThread | None = None
         self._worker: InferWorker | None = None
+        self._task_thread: QThread | None = None
+        self._task_worker: CommandWorker | None = None
         self._last_output_dir: Path | None = None
+        self._training_plots: list[Path] = []
+        self._training_plot_index = 0
 
         self.model_edit = QLineEdit(str(_default_model()))
         self.source_edit = QLineEdit(str(_default_source()))
@@ -112,14 +119,91 @@ class MainWindow(QMainWindow):
         self.infer_log.setPlaceholderText("推理日志会显示在这里")
 
         self.eval_list = QListWidget()
+        self.eval_filter_edit = QLineEdit("")
+        self.eval_filter_edit.setPlaceholderText("筛选评估结果")
         self.eval_detail = QTextEdit()
         self.eval_detail.setReadOnly(True)
         self.validation_list = QListWidget()
+        self.validation_filter_edit = QLineEdit("")
+        self.validation_filter_edit.setPlaceholderText("筛选质检报告")
         self.validation_detail = QTextEdit()
         self.validation_detail.setReadOnly(True)
         self.training_list = QListWidget()
+        self.training_filter_edit = QLineEdit("")
+        self.training_filter_edit.setPlaceholderText("筛选训练结果")
         self.training_detail = QTextEdit()
         self.training_detail.setReadOnly(True)
+        self.training_plot_label = QLabel("选择训练结果后显示曲线图")
+        self.training_plot_label.setObjectName("PreviewPane")
+        self.training_plot_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.training_plot_label.setMinimumHeight(300)
+        self.prev_plot_button = QPushButton("上一张图")
+        self.next_plot_button = QPushButton("下一张图")
+
+        self.desktop_task_combo = QComboBox()
+        self.desktop_task_combo.addItems(["导入数据集", "数据转换", "数据质检", "模型评估", "模型训练"])
+        self.task_stack = QStackedWidget()
+
+        self.import_dataset_edit = QLineEdit("steel-surface-defect")
+        self.import_zip_edit = QLineEdit("")
+        self.import_zip_edit.setPlaceholderText("VOC zip 路径")
+        self.import_overwrite_check = QCheckBox("允许覆盖已有 raw 数据目录")
+        self.import_extra_args_edit = QLineEdit("")
+        self.import_extra_args_edit.setPlaceholderText("追加 CLI 参数")
+
+        self.transform_dataset_edit = QLineEdit("steel-surface-defect")
+        self.transform_format_combo = QComboBox()
+        self.transform_format_combo.addItems(["pascal_voc", "coco", "yolo"])
+        self.transform_task_combo = QComboBox()
+        self.transform_task_combo.addItems(["detect", "segment"])
+        self.transform_extra_args_edit = QLineEdit("")
+        self.transform_extra_args_edit.setPlaceholderText("例如 --split-strategy random --seed 1210")
+
+        self.validate_dataset_edit = QLineEdit("steel-surface-defect")
+        self.validate_task_combo = QComboBox()
+        self.validate_task_combo.addItems(["detect", "segment"])
+        self.validate_executor_edit = QLineEdit("")
+        self.validate_extra_args_edit = QLineEdit("")
+        self.validate_extra_args_edit.setPlaceholderText("例如 --verbose")
+
+        self.eval_model_edit = QLineEdit(str(_default_model()))
+        self.eval_dataset_edit = QLineEdit("steel-surface-defect")
+        self.eval_config_edit = QLineEdit("val")
+        self.eval_device_edit = QLineEdit("0")
+        self.eval_executor_edit = QLineEdit("")
+        self.eval_name_edit = QLineEdit("desktop-eval")
+        self.eval_extra_args_edit = QLineEdit("")
+        self.eval_extra_args_edit.setPlaceholderText("例如 --split val --plots")
+
+        self.train_model_edit = QLineEdit(str(_default_model()))
+        self.train_dataset_edit = QLineEdit("steel-surface-defect")
+        self.train_config_edit = QLineEdit("train")
+        self.train_device_edit = QLineEdit("0")
+        self.train_executor_edit = QLineEdit("")
+        self.train_name_edit = QLineEdit("desktop-train")
+        self.train_epochs_spin = QSpinBox()
+        self.train_epochs_spin.setRange(1, 10000)
+        self.train_epochs_spin.setValue(100)
+        self.train_batch_spin = QSpinBox()
+        self.train_batch_spin.setRange(1, 4096)
+        self.train_batch_spin.setValue(16)
+        self.train_workers_spin = QSpinBox()
+        self.train_workers_spin.setRange(0, 128)
+        self.train_workers_spin.setValue(4)
+        self.train_dry_run_check = QCheckBox("dry-run：只生成计划和日志，不启动训练")
+        self.train_dry_run_check.setChecked(True)
+        self.train_extra_args_edit = QLineEdit("")
+        self.train_extra_args_edit.setPlaceholderText("例如 --imgsz 640 --no-archive")
+
+        self.task_command_preview = QTextEdit()
+        self.task_command_preview.setReadOnly(True)
+        self.task_command_preview.setMaximumHeight(100)
+        self.task_output = QTextEdit()
+        self.task_output.setReadOnly(True)
+        self.task_start_button = QPushButton("启动任务")
+        self.task_start_button.setProperty("primary", True)
+        self.task_stop_button = QPushButton("停止任务")
+        self.task_stop_button.setEnabled(False)
 
         self._build_layout()
         self._connect_signals()
@@ -127,6 +211,7 @@ class MainWindow(QMainWindow):
 
     def closeEvent(self, event) -> None:  # noqa: N802 - Qt API name.
         self._stop_worker()
+        self._stop_task()
         super().closeEvent(event)
 
     def _build_layout(self) -> None:
@@ -141,6 +226,7 @@ class MainWindow(QMainWindow):
                 title="模型评估",
                 hint="浏览 odp-val 生成的模型评估审计。",
                 list_widget=self.eval_list,
+                filter_edit=self.eval_filter_edit,
                 detail_widget=self.eval_detail,
                 refresh_callback=self._refresh_evaluation_results,
                 open_callback=self._open_selected_eval,
@@ -152,23 +238,15 @@ class MainWindow(QMainWindow):
                 title="数据质检",
                 hint="浏览 odp-validate 生成的报告和整改清单。",
                 list_widget=self.validation_list,
+                filter_edit=self.validation_filter_edit,
                 detail_widget=self.validation_detail,
                 refresh_callback=self._refresh_validation_reports,
                 open_callback=self._open_selected_validation,
             ),
             "数据质检",
         )
-        tabs.addTab(
-            self._build_browser_tab(
-                title="训练结果",
-                hint="浏览 YOLO 训练 run、最后一轮指标和权重摘要。",
-                list_widget=self.training_list,
-                detail_widget=self.training_detail,
-                refresh_callback=self._refresh_training_results,
-                open_callback=self._open_selected_training,
-            ),
-            "训练结果",
-        )
+        tabs.addTab(self._build_training_tab(), "训练结果")
+        tabs.addTab(self._build_tasks_tab(), "任务启动")
         root.addWidget(tabs)
         self.setCentralWidget(central)
 
@@ -178,7 +256,7 @@ class MainWindow(QMainWindow):
         layout = QHBoxLayout(header)
         title = QLabel("SteelDefect Studio")
         title.setObjectName("AppTitle")
-        subtitle = QLabel("钢材表面缺陷检测工作台 | 推理、评估、质检、训练结果浏览")
+        subtitle = QLabel("钢材表面缺陷检测工作台 | 推理、评估、质检、训练结果浏览、任务启动")
         subtitle.setObjectName("AppSubtitle")
         text = QVBoxLayout()
         text.addWidget(title)
@@ -254,6 +332,7 @@ class MainWindow(QMainWindow):
         title: str,
         hint: str,
         list_widget: QListWidget,
+        filter_edit: QLineEdit,
         detail_widget: QTextEdit,
         refresh_callback,
         open_callback,
@@ -278,6 +357,7 @@ class MainWindow(QMainWindow):
 
         left = QVBoxLayout()
         left.addLayout(header)
+        left.addWidget(filter_edit)
         left.addLayout(buttons)
         left.addWidget(list_widget)
 
@@ -293,6 +373,166 @@ class MainWindow(QMainWindow):
         root.addWidget(splitter)
         return page
 
+    def _build_training_tab(self) -> QWidget:
+        refresh_button = QPushButton("刷新")
+        open_button = QPushButton("打开训练目录")
+        refresh_button.clicked.connect(self._refresh_training_results)
+        open_button.clicked.connect(self._open_selected_training)
+        self.prev_plot_button.clicked.connect(self._show_previous_training_plot)
+        self.next_plot_button.clicked.connect(self._show_next_training_plot)
+
+        title_label = QLabel("训练结果")
+        title_label.setObjectName("SectionTitle")
+        hint_label = QLabel("浏览 YOLO 训练 run、最后一轮指标、权重和训练曲线。")
+        hint_label.setObjectName("HintText")
+
+        buttons = QHBoxLayout()
+        buttons.addWidget(refresh_button)
+        buttons.addWidget(open_button)
+        buttons.addStretch(1)
+
+        left = QVBoxLayout()
+        left.addWidget(title_label)
+        left.addWidget(hint_label)
+        left.addWidget(self.training_filter_edit)
+        left.addLayout(buttons)
+        left.addWidget(self.training_list)
+
+        plot_buttons = QHBoxLayout()
+        plot_buttons.addWidget(self.prev_plot_button)
+        plot_buttons.addWidget(self.next_plot_button)
+        plot_buttons.addStretch(1)
+
+        right = QVBoxLayout()
+        right.addWidget(self.training_detail, stretch=1)
+        right.addWidget(self.training_plot_label, stretch=1)
+        right.addLayout(plot_buttons)
+
+        list_container = QWidget()
+        list_container.setLayout(left)
+        detail_container = QWidget()
+        detail_container.setLayout(right)
+
+        splitter = QSplitter(Qt.Orientation.Horizontal)
+        splitter.addWidget(list_container)
+        splitter.addWidget(detail_container)
+        splitter.setSizes([360, 900])
+
+        page = QWidget()
+        root = QHBoxLayout(page)
+        root.addWidget(splitter)
+        return page
+
+    def _build_tasks_tab(self) -> QWidget:
+        task_group = QGroupBox("选择任务")
+        task_form = QFormLayout(task_group)
+        task_form.addRow("任务类型", self.desktop_task_combo)
+
+        self.task_stack.addWidget(
+            _form_page(
+                "导入数据集参数",
+                [
+                    ("数据集名称", self.import_dataset_edit),
+                    ("数据 zip", _with_buttons(self.import_zip_edit, [("选择 zip", self._browse_import_zip)])),
+                    ("", self.import_overwrite_check),
+                    ("追加参数", self.import_extra_args_edit),
+                ],
+            )
+        )
+        self.task_stack.addWidget(
+            _form_page(
+                "数据转换参数",
+                [
+                    ("数据集名称", self.transform_dataset_edit),
+                    ("标注格式", self.transform_format_combo),
+                    ("任务类型", self.transform_task_combo),
+                    ("追加参数", self.transform_extra_args_edit),
+                ],
+            )
+        )
+        self.task_stack.addWidget(
+            _form_page(
+                "数据质检参数",
+                [
+                    ("数据集名称", self.validate_dataset_edit),
+                    ("任务类型", self.validate_task_combo),
+                    ("执行人", self.validate_executor_edit),
+                    ("追加参数", self.validate_extra_args_edit),
+                ],
+            )
+        )
+        self.task_stack.addWidget(
+            _form_page(
+                "模型评估参数",
+                [
+                    ("模型权重", _with_buttons(self.eval_model_edit, [("选择权重", self._browse_eval_model)])),
+                    ("数据集名称", self.eval_dataset_edit),
+                    ("评估配置", self.eval_config_edit),
+                    ("设备", self.eval_device_edit),
+                    ("执行人", self.eval_executor_edit),
+                    ("运行名", self.eval_name_edit),
+                    ("追加参数", self.eval_extra_args_edit),
+                ],
+            )
+        )
+        self.task_stack.addWidget(
+            _form_page(
+                "模型训练参数",
+                [
+                    ("模型权重/名称", _with_buttons(self.train_model_edit, [("选择权重", self._browse_train_model)])),
+                    ("数据集名称", self.train_dataset_edit),
+                    ("训练配置", self.train_config_edit),
+                    ("设备", self.train_device_edit),
+                    ("执行人", self.train_executor_edit),
+                    ("运行名", self.train_name_edit),
+                    ("epochs", self.train_epochs_spin),
+                    ("batch", self.train_batch_spin),
+                    ("workers", self.train_workers_spin),
+                    ("", self.train_dry_run_check),
+                    ("追加参数", self.train_extra_args_edit),
+                ],
+            )
+        )
+
+        controls = QHBoxLayout()
+        controls.addWidget(self.task_start_button)
+        controls.addWidget(self.task_stop_button)
+        controls.addStretch(1)
+
+        left = QVBoxLayout()
+        title = QLabel("任务启动")
+        title.setObjectName("SectionTitle")
+        hint = QLabel("从桌面端调用现有 CLI。训练默认 dry-run，避免误触发长时间任务。")
+        hint.setObjectName("HintText")
+        left.addWidget(title)
+        left.addWidget(hint)
+        left.addWidget(task_group)
+        left.addWidget(self.task_stack)
+        left.addLayout(controls)
+        left.addWidget(QLabel("命令预览"))
+        left.addWidget(self.task_command_preview)
+        left.addStretch(1)
+
+        right = QVBoxLayout()
+        output_title = QLabel("任务输出")
+        output_title.setObjectName("SectionTitle")
+        right.addWidget(output_title)
+        right.addWidget(self.task_output)
+
+        splitter = QSplitter(Qt.Orientation.Horizontal)
+        left_container = QWidget()
+        left_container.setLayout(left)
+        right_container = QWidget()
+        right_container.setLayout(right)
+        splitter.addWidget(left_container)
+        splitter.addWidget(right_container)
+        splitter.setSizes([480, 780])
+
+        page = QWidget()
+        root = QHBoxLayout(page)
+        root.addWidget(splitter)
+        return page
+
     def _connect_signals(self) -> None:
         self.start_button.clicked.connect(self._start_worker)
         self.pause_button.clicked.connect(self._toggle_pause)
@@ -301,6 +541,50 @@ class MainWindow(QMainWindow):
         self.eval_list.currentItemChanged.connect(lambda current, _previous: self._show_eval_item(current))
         self.validation_list.currentItemChanged.connect(lambda current, _previous: self._show_validation_item(current))
         self.training_list.currentItemChanged.connect(lambda current, _previous: self._show_training_item(current))
+        self.eval_filter_edit.textChanged.connect(lambda _text: self._refresh_evaluation_results())
+        self.validation_filter_edit.textChanged.connect(lambda _text: self._refresh_validation_reports())
+        self.training_filter_edit.textChanged.connect(lambda _text: self._refresh_training_results())
+        self.desktop_task_combo.currentIndexChanged.connect(self._switch_task_page)
+        self.desktop_task_combo.currentTextChanged.connect(lambda _text: self._refresh_task_preview())
+        for line_edit in (
+            self.import_dataset_edit,
+            self.import_zip_edit,
+            self.import_extra_args_edit,
+            self.transform_dataset_edit,
+            self.transform_extra_args_edit,
+            self.validate_dataset_edit,
+            self.validate_executor_edit,
+            self.validate_extra_args_edit,
+            self.eval_model_edit,
+            self.eval_dataset_edit,
+            self.eval_config_edit,
+            self.eval_device_edit,
+            self.eval_executor_edit,
+            self.eval_name_edit,
+            self.eval_extra_args_edit,
+            self.train_model_edit,
+            self.train_dataset_edit,
+            self.train_config_edit,
+            self.train_device_edit,
+            self.train_executor_edit,
+            self.train_name_edit,
+            self.train_extra_args_edit,
+        ):
+            line_edit.textChanged.connect(lambda _text: self._refresh_task_preview())
+        for combo_box in (
+            self.transform_format_combo,
+            self.transform_task_combo,
+            self.validate_task_combo,
+        ):
+            combo_box.currentTextChanged.connect(lambda _text: self._refresh_task_preview())
+        for spin_box in (self.train_epochs_spin, self.train_batch_spin, self.train_workers_spin):
+            spin_box.valueChanged.connect(lambda _value: self._refresh_task_preview())
+        self.import_overwrite_check.stateChanged.connect(lambda _value: self._refresh_task_preview())
+        self.train_dry_run_check.stateChanged.connect(lambda _value: self._refresh_task_preview())
+        self.task_start_button.clicked.connect(self._start_task)
+        self.task_stop_button.clicked.connect(self._stop_task)
+        self._switch_task_page(self.desktop_task_combo.currentIndex())
+        self._refresh_task_preview()
 
     @Slot()
     def _start_worker(self) -> None:
@@ -432,10 +716,198 @@ class MainWindow(QMainWindow):
         self.stop_button.setEnabled(False)
         self._refresh_all_result_tabs()
 
+    def _switch_task_page(self, index: int) -> None:
+        self.task_stack.setCurrentIndex(max(0, index))
+
+    @Slot()
+    def _start_task(self) -> None:
+        if self._task_thread is not None:
+            return
+        try:
+            module, args = self._build_task_command()
+        except ValueError as exc:
+            self.task_output.append(f"参数错误: {exc}")
+            self._set_status("失败", str(exc))
+            return
+
+        self.task_output.clear()
+        self.task_output.append("启动桌面端任务")
+        self._task_thread = QThread(self)
+        self._task_worker = CommandWorker(module=module, args=args, cwd=ROOT_DIR, platform_src=PLATFORM_SRC)
+        self._task_worker.moveToThread(self._task_thread)
+        self._task_thread.started.connect(self._task_worker.run)
+        self._task_worker.output_ready.connect(self.task_output.append)
+        self._task_worker.completed.connect(self._finish_task)
+        self._task_worker.failed.connect(self._fail_task)
+        self._task_worker.completed.connect(self._task_thread.quit)
+        self._task_worker.failed.connect(self._task_thread.quit)
+        self._task_thread.finished.connect(self._cleanup_task_thread)
+        self.task_start_button.setEnabled(False)
+        self.task_stop_button.setEnabled(True)
+        self._set_status("运行中", f"任务启动: {self.desktop_task_combo.currentText()}")
+        self._task_thread.start()
+
+    @Slot()
+    def _stop_task(self) -> None:
+        if self._task_worker is not None:
+            self._task_worker.cancel()
+            self._set_status("停止中", "正在停止桌面端任务")
+
+    @Slot(int)
+    def _finish_task(self, exit_code: int) -> None:
+        self.task_output.append(f"任务结束，退出码: {exit_code}")
+        if exit_code == 0:
+            self._set_status("完成", "桌面端任务完成")
+        else:
+            self._set_status("失败", f"桌面端任务退出码 {exit_code}")
+
+    @Slot(str)
+    def _fail_task(self, message: str) -> None:
+        self.task_output.append(f"任务失败: {message}")
+        self._set_status("失败", message)
+
+    @Slot()
+    def _cleanup_task_thread(self) -> None:
+        if self._task_worker is not None:
+            self._task_worker.deleteLater()
+        if self._task_thread is not None:
+            self._task_thread.deleteLater()
+        self._task_worker = None
+        self._task_thread = None
+        self.task_start_button.setEnabled(True)
+        self.task_stop_button.setEnabled(False)
+        self._refresh_all_result_tabs()
+
+    def _refresh_task_preview(self) -> None:
+        try:
+            module, args = self._build_task_command()
+            command = " ".join([sys.executable, "-m", module, *args])
+        except ValueError as exc:
+            command = f"参数待补全: {exc}"
+        self.task_command_preview.setPlainText(command)
+
+    def _build_task_command(self) -> tuple[str, list[str]]:
+        task_name = self.desktop_task_combo.currentText()
+
+        if task_name == "导入数据集":
+            dataset = self.import_dataset_edit.text().strip()
+            zip_path = self.import_zip_edit.text().strip()
+            extra_args = _split_extra_args(self.import_extra_args_edit.text().strip())
+            if not zip_path:
+                raise ValueError("导入数据集需要填写数据 zip")
+            args = [zip_path]
+            if dataset:
+                args.extend(["--name", dataset])
+            args.extend(["--format", "voc"])
+            if self.import_overwrite_check.isChecked():
+                args.append("--overwrite")
+            return "od_platform.cli.import_dataset", [*args, *extra_args]
+
+        if task_name == "数据转换":
+            dataset = self.transform_dataset_edit.text().strip()
+            extra_args = _split_extra_args(self.transform_extra_args_edit.text().strip())
+            if not dataset:
+                raise ValueError("数据转换需要填写数据集名称")
+            annotation_format = self.transform_format_combo.currentText()
+            if annotation_format == "voc":
+                annotation_format = "pascal_voc"
+            args = [
+                "--dataset",
+                dataset,
+                "--format",
+                annotation_format,
+                "--task",
+                self.transform_task_combo.currentText(),
+            ]
+            return "od_platform.cli.transform_data", [*args, *extra_args]
+
+        if task_name == "数据质检":
+            dataset = self.validate_dataset_edit.text().strip()
+            executor = self.validate_executor_edit.text().strip()
+            extra_args = _split_extra_args(self.validate_extra_args_edit.text().strip())
+            if not dataset:
+                raise ValueError("数据质检需要填写数据集名称")
+            args = ["--dataset", dataset, "--task", self.validate_task_combo.currentText()]
+            if executor:
+                args.extend(["--executor", executor])
+            return "od_platform.cli.validate_data", [*args, *extra_args]
+
+        if task_name == "模型评估":
+            model = self.eval_model_edit.text().strip()
+            dataset = self.eval_dataset_edit.text().strip()
+            device = self.eval_device_edit.text().strip()
+            executor = self.eval_executor_edit.text().strip()
+            run_name = self.eval_name_edit.text().strip()
+            extra_args = _split_extra_args(self.eval_extra_args_edit.text().strip())
+            if not model:
+                raise ValueError("模型评估需要填写模型权重")
+            if not dataset:
+                raise ValueError("模型评估需要填写数据集名称")
+            args = ["--config", self.eval_config_edit.text().strip() or "val", "--model", model, "--data", dataset]
+            if device:
+                args.extend(["--device", device])
+            if executor:
+                args.extend(["--executor", executor])
+            if run_name:
+                args.extend(["--name", run_name])
+            return "od_platform.cli.evaluate_model", [*args, *extra_args]
+
+        if task_name == "模型训练":
+            model = self.train_model_edit.text().strip()
+            dataset = self.train_dataset_edit.text().strip()
+            device = self.train_device_edit.text().strip()
+            executor = self.train_executor_edit.text().strip()
+            run_name = self.train_name_edit.text().strip()
+            extra_args = _split_extra_args(self.train_extra_args_edit.text().strip())
+            if not model:
+                raise ValueError("模型训练需要填写模型权重或模型名")
+            if not dataset:
+                raise ValueError("模型训练需要填写数据集名称")
+            args = [
+                "--config",
+                self.train_config_edit.text().strip() or "train",
+                "--model",
+                model,
+                "--data",
+                dataset,
+                "--epochs",
+                str(self.train_epochs_spin.value()),
+                "--batch",
+                str(self.train_batch_spin.value()),
+                "--workers",
+                str(self.train_workers_spin.value()),
+            ]
+            if device:
+                args.extend(["--device", device])
+            if executor:
+                args.extend(["--executor", executor])
+            if run_name:
+                args.extend(["--name", run_name])
+            if self.train_dry_run_check.isChecked():
+                args.append("--dry-run")
+            return "od_platform.cli.train_model", [*args, *extra_args]
+
+        raise ValueError(f"未知任务: {task_name}")
+
     def _browse_model(self) -> None:
         path, _ = QFileDialog.getOpenFileName(self, "选择模型权重", str(ROOT_DIR), "PyTorch weights (*.pt);;All files (*)")
         if path:
             self.model_edit.setText(path)
+
+    def _browse_eval_model(self) -> None:
+        path, _ = QFileDialog.getOpenFileName(self, "选择模型权重", str(ROOT_DIR), "PyTorch weights (*.pt);;All files (*)")
+        if path:
+            self.eval_model_edit.setText(path)
+
+    def _browse_train_model(self) -> None:
+        path, _ = QFileDialog.getOpenFileName(self, "选择模型权重", str(ROOT_DIR), "PyTorch weights (*.pt);;All files (*)")
+        if path:
+            self.train_model_edit.setText(path)
+
+    def _browse_import_zip(self) -> None:
+        path, _ = QFileDialog.getOpenFileName(self, "选择数据集 zip", str(ROOT_DIR.parent), "Zip files (*.zip);;All files (*)")
+        if path:
+            self.import_zip_edit.setText(path)
 
     def _browse_media_source(self) -> None:
         path, _ = QFileDialog.getOpenFileName(
@@ -476,6 +948,7 @@ class MainWindow(QMainWindow):
 
     def _refresh_evaluation_results(self) -> None:
         paths = sorted((ROOT_DIR / "runs" / "evaluation").glob("**/odp_audit.json"), reverse=True)
+        paths = _filter_paths(paths, self.eval_filter_edit.text())
         self._fill_list(self.eval_list, paths)
         if self.eval_list.count() == 0:
             self.eval_detail.setPlainText("暂无模型评估结果。运行 odp-val 后会在这里显示。")
@@ -484,15 +957,18 @@ class MainWindow(QMainWindow):
         paths = sorted((ROOT_DIR / "runs" / "data_validation").glob("**/report.json"), reverse=True)
         if not paths:
             paths = sorted((ROOT_DIR / "runs" / "data_validation").glob("**/report.md"), reverse=True)
+        paths = _filter_paths(paths, self.validation_filter_edit.text())
         self._fill_list(self.validation_list, paths)
         if self.validation_list.count() == 0:
             self.validation_detail.setPlainText("暂无数据质检报告。运行 odp-validate 后会在这里显示。")
 
     def _refresh_training_results(self) -> None:
         result_dirs = sorted({path.parent for path in (ROOT_DIR / "runs").glob("**/results.csv")}, reverse=True)
+        result_dirs = _filter_paths(result_dirs, self.training_filter_edit.text())
         self._fill_list(self.training_list, result_dirs)
         if self.training_list.count() == 0:
             self.training_detail.setPlainText("暂无训练结果。运行 odp-train 后会在这里显示。")
+            self.training_plot_label.setText("暂无训练曲线")
 
     @staticmethod
     def _fill_list(list_widget: QListWidget, paths: list[Path]) -> None:
@@ -603,7 +1079,41 @@ class MainWindow(QMainWindow):
         if plots:
             lines.extend(["", "可用图表", "-" * 60])
             lines.extend(f"- {path.name}" for path in plots)
+        self._training_plots = plots
+        self._training_plot_index = 0
+        self._show_training_plot()
         self.training_detail.setPlainText("\n".join(lines))
+
+    def _show_previous_training_plot(self) -> None:
+        if not self._training_plots:
+            return
+        self._training_plot_index = (self._training_plot_index - 1) % len(self._training_plots)
+        self._show_training_plot()
+
+    def _show_next_training_plot(self) -> None:
+        if not self._training_plots:
+            return
+        self._training_plot_index = (self._training_plot_index + 1) % len(self._training_plots)
+        self._show_training_plot()
+
+    def _show_training_plot(self) -> None:
+        if not self._training_plots:
+            self.training_plot_label.setText("当前训练目录没有可预览的 PNG 曲线")
+            self.training_plot_label.setPixmap(QPixmap())
+            return
+        path = self._training_plots[self._training_plot_index]
+        pixmap = QPixmap(str(path))
+        if pixmap.isNull():
+            self.training_plot_label.setText(f"无法加载图表: {path.name}")
+            return
+        self.training_plot_label.setPixmap(
+            pixmap.scaled(
+                self.training_plot_label.size(),
+                Qt.AspectRatioMode.KeepAspectRatio,
+                Qt.TransformationMode.SmoothTransformation,
+            )
+        )
+        self.training_plot_label.setToolTip(str(path))
 
     def _open_selected_eval(self) -> None:
         _open_selected_parent(self.eval_list)
@@ -668,6 +1178,22 @@ def _format_mapping(data: Any, preferred: tuple[str, ...] = ()) -> list[str]:
     return lines
 
 
+def _filter_paths(paths: list[Path], query: str) -> list[Path]:
+    query = query.strip().lower()
+    if not query:
+        return paths
+    return [path for path in paths if query in str(path).lower()]
+
+
+def _split_extra_args(text: str) -> list[str]:
+    if not text:
+        return []
+    try:
+        return shlex.split(text, posix=False)
+    except ValueError as exc:
+        raise ValueError(f"追加参数解析失败: {exc}") from exc
+
+
 def _is_relative_to(path: Path, base: Path) -> bool:
     try:
         path.relative_to(base)
@@ -686,6 +1212,18 @@ def _with_buttons(line_edit: QLineEdit, buttons: list[tuple[str, object]]) -> QW
         button.clicked.connect(callback)
         layout.addWidget(button)
     return container
+
+
+def _form_page(title: str, rows: list[tuple[str, QWidget]]) -> QWidget:
+    page = QWidget()
+    layout = QVBoxLayout(page)
+    group = QGroupBox(title)
+    form = QFormLayout(group)
+    for label, widget in rows:
+        form.addRow(label, widget)
+    layout.addWidget(group)
+    layout.addStretch(1)
+    return page
 
 
 def _to_pixmap(image) -> QPixmap:

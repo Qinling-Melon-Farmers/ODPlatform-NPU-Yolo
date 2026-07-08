@@ -22,13 +22,17 @@ python apps/desktop/main.py
 - 默认开启“多级流水线”，复用 D8 `--threaded` 路径；摄像头源使用 latest 缓冲保证实时性，图片目录/视频源使用 bounded 缓冲保证不丢帧。
 - 通过 `QtSignalSink` 和 `InferHooks` 复用 platform 推理服务，不在 UI 层直接实现 YOLO 推理。
 - 通过 `style.qss` 提供统一深色主题，保持 UI 代码和视觉样式分离。
+- 对评估、质检、训练结果提供筛选搜索。
+- 对训练结果提供 PNG 曲线内嵌预览。
+- 通过后台子进程调用现有 CLI，支持数据导入、转换、质检、评估和训练任务启动；参数区按任务类型切换页面，训练默认 dry-run。
 
 工作台页面：
 
 - 推理：图片、目录、视频、摄像头推理。
-- 模型评估：读取 `runs/evaluation/**/odp_audit.json`。
-- 数据质检：读取 `runs/data_validation/**/report.md` 或 `report.json`。
-- 训练结果：读取 `runs/**/results.csv`、最后一轮指标、可用图表和 `weights/*.pt` 摘要。
+- 模型评估：筛选并读取 `runs/evaluation/**/odp_audit.json`。
+- 数据质检：筛选并读取 `runs/data_validation/**/report.md` 或 `report.json`。
+- 训练结果：筛选并读取 `runs/**/results.csv`、最后一轮指标、可用图表和 `weights/*.pt` 摘要。
+- 任务启动：按任务类型显示独立参数页，并调用 `odp-import-dataset`、`odp-transform`、`odp-validate`、`odp-val`、`odp-train` 对应 CLI 模块。
 
 ## 输入源
 
@@ -47,9 +51,9 @@ python apps/desktop/main.py
 
 ## 后续开发
 
-1. 增加运行历史筛选、搜索和删除本地产物的安全入口。
-2. 增加数据导入、数据转换、数据质检、评估的任务启动表单。
-3. 增加训练曲线图片的内嵌预览和对比视图。
+1. 增加本地产物删除的安全入口。
+2. 增加任务参数分组、模板保存和运行历史复用。
+3. 增加训练曲线多 run 对比视图。
 
 ## 验收标准
 
