@@ -1,4 +1,4 @@
-"""Minimal PySide6 desktop inference demo for ODPlatform."""
+"""PySide6 desktop workbench for SteelDefect Studio."""
 
 from __future__ import annotations
 
@@ -6,6 +6,7 @@ import csv
 import json
 import sys
 from pathlib import Path
+from typing import Any
 
 ROOT_DIR = Path(__file__).resolve().parents[2]
 PLATFORM_SRC = ROOT_DIR / "apps" / "platform" / "src"
@@ -22,6 +23,9 @@ try:
         QComboBox,
         QFileDialog,
         QFormLayout,
+        QFrame,
+        QGridLayout,
+        QGroupBox,
         QHBoxLayout,
         QLabel,
         QLineEdit,
@@ -29,6 +33,7 @@ try:
         QMainWindow,
         QPushButton,
         QSpinBox,
+        QSplitter,
         QTabWidget,
         QTextEdit,
         QVBoxLayout,
@@ -48,12 +53,12 @@ from infer_worker import InferWorker  # noqa: E402
 
 
 class MainWindow(QMainWindow):
-    """Small operator UI for image, folder, video and camera inference."""
+    """Local desktop workbench for inference and result inspection."""
 
     def __init__(self) -> None:
         super().__init__()
-        self.setWindowTitle("ODPlatform 推理演示")
-        self.resize(1320, 820)
+        self.setWindowTitle("SteelDefect Studio")
+        self.resize(1440, 900)
         self._thread: QThread | None = None
         self._worker: InferWorker | None = None
         self._last_output_dir: Path | None = None
@@ -81,10 +86,11 @@ class MainWindow(QMainWindow):
         self.max_frames_spin.setRange(0, 1_000_000)
         self.max_frames_spin.setSpecialValueText("不限")
         self.save_check = QCheckBox("保存推理结果")
-        self.threaded_check = QCheckBox("后台读帧")
+        self.threaded_check = QCheckBox("多级流水线")
         self.threaded_check.setChecked(True)
 
         self.start_button = QPushButton("启动")
+        self.start_button.setProperty("primary", True)
         self.pause_button = QPushButton("暂停")
         self.stop_button = QPushButton("停止")
         self.open_output_button = QPushButton("打开输出目录")
@@ -93,10 +99,17 @@ class MainWindow(QMainWindow):
         self.open_output_button.setEnabled(False)
 
         self.image_label = QLabel("等待启动推理")
+        self.image_label.setObjectName("PreviewPane")
         self.image_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.image_label.setMinimumSize(860, 560)
-        self.image_label.setStyleSheet("background: #111827; color: #d1d5db; border: 1px solid #374151;")
         self.status_label = QLabel("状态：就绪")
+        self.status_label.setObjectName("StatusLabel")
+        self.summary_label = QLabel("帧数 0 | 检测 0 | FPS 0.00 | 输出目录 -")
+        self.summary_label.setObjectName("SummaryLabel")
+        self.infer_log = QTextEdit()
+        self.infer_log.setReadOnly(True)
+        self.infer_log.setMaximumHeight(160)
+        self.infer_log.setPlaceholderText("推理日志会显示在这里")
 
         self.eval_list = QListWidget()
         self.eval_detail = QTextEdit()
@@ -117,39 +130,87 @@ class MainWindow(QMainWindow):
         super().closeEvent(event)
 
     def _build_layout(self) -> None:
+        central = QWidget()
+        root = QVBoxLayout(central)
+        root.addWidget(self._build_header())
+
         tabs = QTabWidget()
         tabs.addTab(self._build_inference_tab(), "推理")
         tabs.addTab(
             self._build_browser_tab(
-                self.eval_list,
-                self.eval_detail,
-                self._refresh_evaluation_results,
-                self._open_selected_eval,
+                title="模型评估",
+                hint="浏览 odp-val 生成的模型评估审计。",
+                list_widget=self.eval_list,
+                detail_widget=self.eval_detail,
+                refresh_callback=self._refresh_evaluation_results,
+                open_callback=self._open_selected_eval,
             ),
             "模型评估",
         )
         tabs.addTab(
             self._build_browser_tab(
-                self.validation_list,
-                self.validation_detail,
-                self._refresh_validation_reports,
-                self._open_selected_validation,
+                title="数据质检",
+                hint="浏览 odp-validate 生成的报告和整改清单。",
+                list_widget=self.validation_list,
+                detail_widget=self.validation_detail,
+                refresh_callback=self._refresh_validation_reports,
+                open_callback=self._open_selected_validation,
             ),
             "数据质检",
         )
         tabs.addTab(
             self._build_browser_tab(
-                self.training_list,
-                self.training_detail,
-                self._refresh_training_results,
-                self._open_selected_training,
+                title="训练结果",
+                hint="浏览 YOLO 训练 run、最后一轮指标和权重摘要。",
+                list_widget=self.training_list,
+                detail_widget=self.training_detail,
+                refresh_callback=self._refresh_training_results,
+                open_callback=self._open_selected_training,
             ),
             "训练结果",
         )
-        self.setCentralWidget(tabs)
+        root.addWidget(tabs)
+        self.setCentralWidget(central)
+
+    def _build_header(self) -> QWidget:
+        header = QFrame()
+        header.setObjectName("Header")
+        layout = QHBoxLayout(header)
+        title = QLabel("SteelDefect Studio")
+        title.setObjectName("AppTitle")
+        subtitle = QLabel("钢材表面缺陷检测工作台 | 推理、评估、质检、训练结果浏览")
+        subtitle.setObjectName("AppSubtitle")
+        text = QVBoxLayout()
+        text.addWidget(title)
+        text.addWidget(subtitle)
+        layout.addLayout(text)
+        layout.addStretch(1)
+        layout.addWidget(self.status_label)
+        return header
 
     def _build_inference_tab(self) -> QWidget:
-        form = QFormLayout()
+        splitter = QSplitter(Qt.Orientation.Horizontal)
+        splitter.addWidget(self._build_preview_panel())
+        splitter.addWidget(self._build_control_panel())
+        splitter.setSizes([960, 420])
+        page = QWidget()
+        layout = QHBoxLayout(page)
+        layout.addWidget(splitter)
+        return page
+
+    def _build_preview_panel(self) -> QWidget:
+        panel = QWidget()
+        layout = QVBoxLayout(panel)
+        layout.addWidget(self.image_label, stretch=1)
+        layout.addWidget(self.summary_label)
+        layout.addWidget(self.infer_log)
+        return panel
+
+    def _build_control_panel(self) -> QWidget:
+        panel = QWidget()
+        root = QVBoxLayout(panel)
+        form_group = QGroupBox("推理参数")
+        form = QFormLayout(form_group)
         form.addRow("模型", _with_buttons(self.model_edit, [("选择权重", self._browse_model)]))
         form.addRow(
             "输入源",
@@ -176,28 +237,22 @@ class MainWindow(QMainWindow):
         form.addRow("", self.save_check)
         form.addRow("", self.threaded_check)
 
-        controls = QHBoxLayout()
-        controls.addWidget(self.start_button)
-        controls.addWidget(self.pause_button)
-        controls.addWidget(self.stop_button)
-        controls.addWidget(self.open_output_button)
+        controls = QGridLayout()
+        controls.addWidget(self.start_button, 0, 0)
+        controls.addWidget(self.pause_button, 0, 1)
+        controls.addWidget(self.stop_button, 1, 0)
+        controls.addWidget(self.open_output_button, 1, 1)
 
-        side = QVBoxLayout()
-        side.addLayout(form)
-        side.addLayout(controls)
-        side.addWidget(self.status_label)
-        side.addStretch(1)
-
-        root = QHBoxLayout()
-        root.addWidget(self.image_label, stretch=1)
-        root.addLayout(side)
-
-        central = QWidget()
-        central.setLayout(root)
-        return central
+        root.addWidget(form_group)
+        root.addLayout(controls)
+        root.addStretch(1)
+        return panel
 
     def _build_browser_tab(
         self,
+        *,
+        title: str,
+        hint: str,
         list_widget: QListWidget,
         detail_widget: QTextEdit,
         refresh_callback,
@@ -208,20 +263,34 @@ class MainWindow(QMainWindow):
         refresh_button.clicked.connect(refresh_callback)
         open_button.clicked.connect(open_callback)
 
+        header = QVBoxLayout()
+        title_label = QLabel(title)
+        title_label.setObjectName("SectionTitle")
+        hint_label = QLabel(hint)
+        hint_label.setObjectName("HintText")
+        header.addWidget(title_label)
+        header.addWidget(hint_label)
+
         buttons = QHBoxLayout()
         buttons.addWidget(refresh_button)
         buttons.addWidget(open_button)
         buttons.addStretch(1)
 
-        root = QHBoxLayout()
         left = QVBoxLayout()
+        left.addLayout(header)
         left.addLayout(buttons)
         left.addWidget(list_widget)
-        root.addLayout(left, stretch=1)
-        root.addWidget(detail_widget, stretch=2)
+
+        splitter = QSplitter(Qt.Orientation.Horizontal)
+        list_container = QWidget()
+        list_container.setLayout(left)
+        splitter.addWidget(list_container)
+        splitter.addWidget(detail_widget)
+        splitter.setSizes([420, 820])
 
         page = QWidget()
-        page.setLayout(root)
+        root = QHBoxLayout(page)
+        root.addWidget(splitter)
         return page
 
     def _connect_signals(self) -> None:
@@ -241,8 +310,13 @@ class MainWindow(QMainWindow):
             conf = float(self.conf_edit.text().strip())
             iou = float(self.iou_edit.text().strip())
         except ValueError:
-            self.status_label.setText("状态：置信度和 IoU 必须是数字")
+            self._set_status("失败", "置信度和 IoU 必须是数字")
             return
+
+        self.infer_log.clear()
+        self._append_log("启动推理任务")
+        self._append_log(f"模型: {self.model_edit.text().strip()}")
+        self._append_log(f"输入源: {self.source_edit.text().strip()}")
 
         self._thread = QThread(self)
         self._worker = InferWorker(
@@ -276,7 +350,7 @@ class MainWindow(QMainWindow):
         self.pause_button.setEnabled(True)
         self.pause_button.setText("暂停")
         self.stop_button.setEnabled(True)
-        self.status_label.setText("状态：推理运行中")
+        self._set_status("运行中", "推理运行中")
         self._thread.start()
 
     @Slot()
@@ -286,16 +360,19 @@ class MainWindow(QMainWindow):
         paused = self._worker.toggle_pause()
         if paused:
             self.pause_button.setText("继续")
-            self.status_label.setText("状态：已暂停")
+            self._set_status("已暂停", "推理已暂停")
+            self._append_log("推理已暂停")
         else:
             self.pause_button.setText("暂停")
-            self.status_label.setText("状态：推理运行中")
+            self._set_status("运行中", "推理运行中")
+            self._append_log("推理已继续")
 
     @Slot()
     def _stop_worker(self) -> None:
         if self._worker is not None:
             self._worker.cancel()
-            self.status_label.setText("状态：正在停止")
+            self._set_status("停止中", "正在停止")
+            self._append_log("请求停止推理")
 
     @Slot(object, object)
     def _show_frame(self, _frame, annotated) -> None:
@@ -311,19 +388,35 @@ class MainWindow(QMainWindow):
     @Slot(object)
     def _show_progress(self, event) -> None:
         total = event.total_frames if event.total_frames is not None else "未知"
-        self.status_label.setText(
-            f"状态：帧 {event.frame_index}/{total}，FPS {event.loop_fps:.2f}，累计检测 {event.detections_total}"
+        self._set_status("运行中", f"帧 {event.frame_index}/{total}，FPS {event.loop_fps:.2f}")
+        self.summary_label.setText(
+            f"帧数 {event.frame_index} | 检测 {event.detections_total} | FPS {event.loop_fps:.2f} | 输出目录 {self._last_output_dir or '-'}"
         )
+        if event.frame_index % 30 == 0:
+            self._append_log(f"进度: frame={event.frame_index}, fps={event.loop_fps:.2f}, detections={event.detections_total}")
 
     @Slot(object)
     def _finish_success(self, result) -> None:
         self._last_output_dir = Path(result.output_dir)
         self.open_output_button.setEnabled(True)
-        self.status_label.setText(f"状态：完成，输出目录 {result.output_dir}")
+        stats = result.stats or {}
+        self.summary_label.setText(
+            " | ".join(
+                [
+                    f"帧数 {stats.get('frames', 0)}",
+                    f"检测 {stats.get('detections', 0)}",
+                    f"平均 FPS {stats.get('avg_fps', 0)}",
+                    f"输出目录 {result.output_dir}",
+                ]
+            )
+        )
+        self._set_status("完成", f"输出目录 {result.output_dir}")
+        self._append_log(f"推理完成: {json.dumps(stats, ensure_ascii=False)}")
 
     @Slot(str)
     def _finish_failed(self, message: str) -> None:
-        self.status_label.setText(f"状态：失败，{message}")
+        self._set_status("失败", message)
+        self._append_log(f"推理失败: {message}")
 
     @Slot()
     def _cleanup_thread(self) -> None:
@@ -382,26 +475,21 @@ class MainWindow(QMainWindow):
         self._refresh_training_results()
 
     def _refresh_evaluation_results(self) -> None:
-        self._fill_list(
-            self.eval_list,
-            sorted((ROOT_DIR / "runs" / "evaluation").glob("**/odp_audit.json"), reverse=True),
-        )
+        paths = sorted((ROOT_DIR / "runs" / "evaluation").glob("**/odp_audit.json"), reverse=True)
+        self._fill_list(self.eval_list, paths)
         if self.eval_list.count() == 0:
             self.eval_detail.setPlainText("暂无模型评估结果。运行 odp-val 后会在这里显示。")
 
     def _refresh_validation_reports(self) -> None:
-        paths = sorted((ROOT_DIR / "runs" / "data_validation").glob("**/report.md"), reverse=True)
+        paths = sorted((ROOT_DIR / "runs" / "data_validation").glob("**/report.json"), reverse=True)
         if not paths:
-            paths = sorted((ROOT_DIR / "runs" / "data_validation").glob("**/report.json"), reverse=True)
+            paths = sorted((ROOT_DIR / "runs" / "data_validation").glob("**/report.md"), reverse=True)
         self._fill_list(self.validation_list, paths)
         if self.validation_list.count() == 0:
             self.validation_detail.setPlainText("暂无数据质检报告。运行 odp-validate 后会在这里显示。")
 
     def _refresh_training_results(self) -> None:
-        result_dirs = sorted(
-            {path.parent for path in (ROOT_DIR / "runs").glob("**/results.csv")},
-            reverse=True,
-        )
+        result_dirs = sorted({path.parent for path in (ROOT_DIR / "runs").glob("**/results.csv")}, reverse=True)
         self._fill_list(self.training_list, result_dirs)
         if self.training_list.count() == 0:
             self.training_detail.setPlainText("暂无训练结果。运行 odp-train 后会在这里显示。")
@@ -421,54 +509,100 @@ class MainWindow(QMainWindow):
             return
         path = Path(item.data(Qt.ItemDataRole.UserRole))
         payload = _read_json(path)
+        metrics = payload.get("metrics", {})
         lines = [
-            f"评估审计: {path}",
+            "模型评估摘要",
+            "=" * 60,
+            f"运行名      : {payload.get('run_name') or payload.get('audit_run_name')}",
+            f"模型        : {payload.get('model_ref')}",
+            f"数据        : {payload.get('data_yaml') or payload.get('config', {}).get('data')}",
+            f"创建时间    : {payload.get('created_at')}",
+            f"耗时        : {payload.get('elapsed_seconds')} 秒",
             "",
-            f"运行名: {payload.get('run_name') or payload.get('audit_run_name')}",
-            f"模型: {payload.get('model_ref')}",
-            f"数据: {payload.get('data_ref') or payload.get('config', {}).get('data')}",
-            f"创建时间: {payload.get('created_at')}",
-            "",
-            "原始 JSON:",
-            json.dumps(payload, ensure_ascii=False, indent=2),
+            "指标",
+            "-" * 60,
         ]
+        lines.extend(_format_mapping(metrics, preferred=("fitness", "map50", "map50_95", "precision", "recall")))
+        lines.extend(["", "原始 JSON", "-" * 60, json.dumps(payload, ensure_ascii=False, indent=2)])
         self.eval_detail.setPlainText("\n".join(lines))
 
     def _show_validation_item(self, item) -> None:
         if item is None:
             return
         path = Path(item.data(Qt.ItemDataRole.UserRole))
-        if path.suffix.lower() == ".json":
-            payload = _read_json(path)
-            self.validation_detail.setPlainText(json.dumps(payload, ensure_ascii=False, indent=2))
+        if path.suffix.lower() != ".json":
+            self.validation_detail.setPlainText(path.read_text(encoding="utf-8", errors="replace"))
             return
-        self.validation_detail.setPlainText(path.read_text(encoding="utf-8", errors="replace"))
+        payload = _read_json(path)
+        counts = payload.get("counts", {})
+        summary = payload.get("dataset_summary", {})
+        results = payload.get("results", [])
+        lines = [
+            "数据质检摘要",
+            "=" * 60,
+            f"运行 ID     : {payload.get('run_id')}",
+            f"严重级别    : {payload.get('overall_severity')}",
+            f"退出码      : {payload.get('exit_code')}",
+            f"数据 YAML   : {payload.get('yaml_path')}",
+            f"耗时        : {payload.get('duration_seconds')} 秒",
+            "",
+            "结果计数",
+            "-" * 60,
+            *_format_mapping(counts),
+            "",
+            "数据集概览",
+            "-" * 60,
+            *_format_mapping(summary),
+            "",
+            "检查项",
+            "-" * 60,
+        ]
+        for result in results:
+            lines.append(f"[{result.get('severity')}] {result.get('name')}: {result.get('summary')}")
+        fix_items = payload.get("fix_items") or []
+        if fix_items:
+            lines.extend(["", "整改清单", "-" * 60])
+            lines.extend(f"- {item}" for item in fix_items[:50])
+        self.validation_detail.setPlainText("\n".join(lines))
 
     def _show_training_item(self, item) -> None:
         if item is None:
             return
         run_dir = Path(item.data(Qt.ItemDataRole.UserRole))
         results_csv = run_dir / "results.csv"
-        lines = [f"训练目录: {run_dir}", ""]
+        lines = ["训练结果摘要", "=" * 60, f"训练目录: {run_dir}", ""]
         if results_csv.exists():
             rows = _read_csv_rows(results_csv)
             lines.append(f"results.csv: {results_csv}")
-            lines.append(f"epoch 数: {len(rows)}")
+            lines.append(f"epoch 数   : {len(rows)}")
             if rows:
+                lines.extend(["", "最后一轮指标", "-" * 60])
                 last = rows[-1]
-                lines.append("")
-                lines.append("最后一轮指标:")
-                for key in ("epoch", "metrics/precision(B)", "metrics/recall(B)", "metrics/mAP50(B)", "metrics/mAP50-95(B)"):
-                    if key in last:
-                        lines.append(f"{key}: {last[key]}")
+                lines.extend(
+                    _format_mapping(
+                        last,
+                        preferred=(
+                            "epoch",
+                            "train/box_loss",
+                            "val/box_loss",
+                            "metrics/precision(B)",
+                            "metrics/recall(B)",
+                            "metrics/mAP50(B)",
+                            "metrics/mAP50-95(B)",
+                        ),
+                    )
+                )
         else:
             lines.append("未找到 results.csv。")
 
         weights = sorted((run_dir / "weights").glob("*.pt"))
         if weights:
-            lines.append("")
-            lines.append("权重文件:")
+            lines.extend(["", "权重文件", "-" * 60])
             lines.extend(f"- {path.name}" for path in weights)
+        plots = sorted(run_dir.glob("*.png"))[:20]
+        if plots:
+            lines.extend(["", "可用图表", "-" * 60])
+            lines.extend(f"- {path.name}" for path in plots)
         self.training_detail.setPlainText("\n".join(lines))
 
     def _open_selected_eval(self) -> None:
@@ -481,6 +615,12 @@ class MainWindow(QMainWindow):
         item = self.training_list.currentItem()
         if item is not None:
             _open_path(Path(item.data(Qt.ItemDataRole.UserRole)))
+
+    def _set_status(self, state: str, detail: str) -> None:
+        self.status_label.setText(f"状态：{state} | {detail}")
+
+    def _append_log(self, message: str) -> None:
+        self.infer_log.append(message)
 
 
 def _open_path(path: Path) -> None:
@@ -508,6 +648,24 @@ def _read_csv_rows(path: Path) -> list[dict[str, str]]:
     except UnicodeDecodeError:
         with path.open("r", encoding="gbk", newline="") as handle:
             return list(csv.DictReader(handle))
+
+
+def _format_mapping(data: Any, preferred: tuple[str, ...] = ()) -> list[str]:
+    if not isinstance(data, dict):
+        return [str(data)]
+    lines: list[str] = []
+    seen: set[str] = set()
+    for key in preferred:
+        if key in data:
+            lines.append(f"{key:<28}: {data[key]}")
+            seen.add(key)
+    for key, value in data.items():
+        if key in seen:
+            continue
+        if isinstance(value, (dict, list)):
+            value = json.dumps(value, ensure_ascii=False)
+        lines.append(f"{key:<28}: {value}")
+    return lines
 
 
 def _is_relative_to(path: Path, base: Path) -> bool:
@@ -554,8 +712,16 @@ def _default_source() -> str:
     return "0"
 
 
+def _load_stylesheet() -> str:
+    qss = ROOT_DIR / "apps" / "desktop" / "style.qss"
+    if qss.exists():
+        return qss.read_text(encoding="utf-8")
+    return ""
+
+
 def main() -> int:
     app = QApplication(sys.argv)
+    app.setStyleSheet(_load_stylesheet())
     window = MainWindow()
     window.show()
     return app.exec()

@@ -18,16 +18,17 @@ python apps/desktop/main.py
 - 选择输入源：图片、图片目录、视频，或直接使用摄像头 `0`。
 - 读取 `apps/platform/configs/runtime/infer_pipeline.yaml` 中的 steel 中文类别映射和美化框配置。
 - 可选推理运行配置，并可设置 task、conf、iou、imgsz、max_det、classes、device、name、max_frames。
-- 启动、暂停/继续、停止推理，并显示实时画面、FPS、累计检测数量和输出目录。
+- 启动、暂停/继续、停止推理，并显示实时画面、FPS、累计检测数量、输出目录和运行日志。
 - 默认开启“多级流水线”，复用 D8 `--threaded` 路径；摄像头源使用 latest 缓冲保证实时性，图片目录/视频源使用 bounded 缓冲保证不丢帧。
 - 通过 `QtSignalSink` 和 `InferHooks` 复用 platform 推理服务，不在 UI 层直接实现 YOLO 推理。
+- 通过 `style.qss` 提供统一深色主题，保持 UI 代码和视觉样式分离。
 
 工作台页面：
 
 - 推理：图片、目录、视频、摄像头推理。
 - 模型评估：读取 `runs/evaluation/**/odp_audit.json`。
 - 数据质检：读取 `runs/data_validation/**/report.md` 或 `report.json`。
-- 训练结果：读取 `runs/**/results.csv` 和 `weights/*.pt` 摘要。
+- 训练结果：读取 `runs/**/results.csv`、最后一轮指标、可用图表和 `weights/*.pt` 摘要。
 
 ## 输入源
 
@@ -46,9 +47,9 @@ python apps/desktop/main.py
 
 ## 后续开发
 
-1. 增加训练曲线图片/表格可视化。
-2. 增加运行历史筛选、搜索和删除本地产物的安全入口。
-3. 增加数据导入、数据转换、数据质检、评估的任务启动表单。
+1. 增加运行历史筛选、搜索和删除本地产物的安全入口。
+2. 增加数据导入、数据转换、数据质检、评估的任务启动表单。
+3. 增加训练曲线图片的内嵌预览和对比视图。
 
 ## 验收标准
 

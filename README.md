@@ -67,9 +67,9 @@ odp-infer --model models/trained/steel-defect-yolo11n-2-20260707-122829-yolo11n-
 | `odp-infer` | 图片、目录、视频、摄像头推理 |
 | `odp-plot-training` | 绘制训练曲线和指标摘要 |
 
-## 桌面端推理演示
+## 桌面端工作台
 
-桌面端位于 `apps/desktop`，当前提供 PySide6 最小推理演示窗口，复用 platform 的 `infer_yolo()`、`InferHooks` 和 `OutputSink`，不复制 YOLO 推理逻辑。
+桌面端位于 `apps/desktop`，当前提供 PySide6 工作台第一版，复用 platform 的 `infer_yolo()`、`InferHooks` 和 `OutputSink`，不复制 YOLO 推理逻辑。
 
 ```powershell
 conda activate odplat
@@ -77,14 +77,14 @@ pip install -r apps/desktop/requirements.txt
 python apps/desktop/main.py
 ```
 
-界面默认优先查找 `models/trained/**/*best*.pt`，并读取 `apps/platform/configs/runtime/infer_pipeline.yaml` 中的 steel 中文类别映射。输入源支持图片、视频、图片文件夹和摄像头；“多级流水线”默认开启，复用 D8 `--threaded` 推理路径。桌面端当前已接入 runtime 配置、pipeline 配置、task、conf、iou、imgsz、max_det、classes、device、name、max_frames 等主要推理参数，并支持暂停/继续、停止和打开输出目录。
+界面默认优先查找 `models/trained/**/*best*.pt`，并读取 `apps/platform/configs/runtime/infer_pipeline.yaml` 中的 steel 中文类别映射。输入源支持图片、视频、图片文件夹和摄像头；“多级流水线”默认开启，复用 D8 `--threaded` 推理路径。桌面端当前已接入 runtime 配置、pipeline 配置、task、conf、iou、imgsz、max_det、classes、device、name、max_frames 等主要推理参数，并支持暂停/继续、停止、打开输出目录、实时日志和统计摘要。
 
 桌面端当前是工作台第一版，包含四个页面：
 
 - 推理：调用 D8 pipeline 完成图片、目录、视频、摄像头推理。
 - 模型评估：浏览 `runs/evaluation/**/odp_audit.json`。
 - 数据质检：浏览 `runs/data_validation/**/report.md` 或 `report.json`。
-- 训练结果：浏览 `runs/**/results.csv` 和对应权重摘要。
+- 训练结果：浏览 `runs/**/results.csv`、最后一轮指标、可用图表和对应权重摘要。
 
 ## 模块边界
 
@@ -106,7 +106,7 @@ python apps/desktop/main.py
 ## 后续重点
 
 - D8 推理流水线当前已具备 CLI、service、hook、sink、cancel、pause/resume、多级流水线和审计闭环。
-- 桌面端后续增加更完整的训练曲线图、运行历史筛选和任务启动表单。
+- 桌面端后续增加运行历史筛选、训练/评估/质检任务启动表单，以及更完整的训练曲线图预览。
 - Web 后端仍是预留目录，尚未进入当前阶段主线。
 
 ## 验证
