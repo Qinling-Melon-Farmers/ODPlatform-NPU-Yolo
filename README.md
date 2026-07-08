@@ -1,14 +1,15 @@
 # ODPlatform
 
-ODPlatform 是生产实习阶段构建的目标检测开发平台，当前重点覆盖数据集导入、格式转换、数据质检、训练、推理、训练结果可视化、推理结果美化绘制，以及图片/视频/摄像头统一输入源。
+ODPlatform 是生产实习阶段构建的目标检测开发平台。当前主线围绕 steel surface defect 数据集完成数据导入、格式转换、数据质检、训练、模型评估、推理、训练曲线和推理结果美化。
 
 ## 当前状态
 
 - 仓库根目录：`ODPlatform`
 - Python 包：`apps/platform/src/od_platform`
+- 开发环境：统一使用 `odplat` Conda 环境
 - 安装方式：`pip install -e ./apps/platform`
-- 开发环境：使用 `odplat` Conda 环境
-- 日志：终端使用彩色输出，文件日志保持纯文本
+- 当前数据集：`steel-surface-defect`
+- 当前任务类型：YOLO detect
 
 ## 快速开始
 
@@ -19,62 +20,67 @@ pip install -e ./apps/platform
 odp-init
 ```
 
-Python 路径应包含 `envs\odplat`。不要在项目内提交虚拟环境、缓存、日志、数据集、模型权重和运行产物。
+Python 路径应包含 `envs\odplat`。不要提交虚拟环境、缓存、日志、数据集、模型权重和运行产物。
 
-## 常用命令
+## Steel 数据集流程
 
 ```powershell
-# 初始化运行目录
-odp-init
+# 导入 Roboflow VOC zip
+odp-import-dataset "..\steel surface defect.v1i.voc.zip" --name steel-surface-defect --format voc --overwrite
 
-# 安全重置运行产物，默认 dry-run
-odp-reset
-odp-reset --yes --force
-
-# 导入 VOC zip 数据集到 data/raw
-odp-import-dataset "C:\path\dataset.voc.zip" --name steel-surface-defect
-
-# 转换并划分数据集
+# 转换、划分、生成 dataset yaml
 odp-transform --dataset steel-surface-defect --format pascal_voc --task detect
 
 # 数据质量检查
 odp-validate --dataset steel-surface-defect --executor your-name
 
-# 生成运行配置
-odp-gen-config train --force
-odp-gen-config val --force
-odp-gen-config infer --force
+# 训练
+odp-train --yaml train --data steel-surface-defect --model yolo11n.pt --epochs 100 --batch 16 --imgsz 640 --device 0 --workers 4 --name steel-defect-yolo11n
 
-# 训练、推理、训练曲线
-odp-train --yaml train --data steel-surface-defect --model yolo11n.pt --epochs 100 --batch 16 --imgsz 640 --device 0
-odp-infer --config infer
+# 模型评估，区别于 odp-validate 数据质检
+odp-val --config val --model models/trained/steel-defect-yolo11n-2-20260707-122829-yolo11n-best/best.pt --data steel-surface-defect --device 0
 
-# 实时摄像头推理，使用生产实习根目录的带教示例权重
-odp-infer --model ..\train3-20250704-165500-yolo11n-best.pt --source 0 --show --conf 0.25 --device 0 --name camera-yolo-demo
+# 推理；默认会读取 apps/platform/configs/runtime/infer_pipeline.yaml 的 steel 中文标签映射
+odp-infer --model models/trained/steel-defect-yolo11n-2-20260707-122829-yolo11n-best/best.pt --source data/processed/steel-surface-defect/test/images --conf 0.25 --device 0 --name steel-defect-test
 
-# D8 推理流水线：帧源配置 + 美化绘制 + HUD + odp_audit.json
-odp-infer --model ..\train3-20250704-165500-yolo11n-best.pt --source 0 --show --pipeline-yaml ..\infer_pipeline.yaml --conf 0.25 --device 0 --name camera-beautify-demo
-odp-plot-training runs/detect/train/results.csv --output runs/detect/train/training_results.png
+# 摄像头实时推理
+odp-infer --model models/trained/steel-defect-yolo11n-2-20260707-122829-yolo11n-best/best.pt --source 0 --show --conf 0.25 --device 0 --name steel-camera-demo
 ```
 
-## 主要模块
+## CLI 一览
 
-- `common/`：路径、日志、性能计时、注册表、资源引用解析。
-- `data_pipeline/`：数据格式转换、YOLO 数据划分、数据集 YAML 生成。
-- `data_validation/`：数据质检注册表、快照、检查项、JSON/Markdown/HTML/CSV 报告。
-- `runtime_config/`：训练、验证、推理配置模型，支持默认值、YAML、CLI 合并。
-- `training/`：YOLO 训练、训练产物审计、权重归档、结果图表。
-- `inference/`：YOLO 推理、D8 逐帧推理流水线、摄像头/图片/视频源、HUD、结果落盘和审计清单。
-- `frame_source/`：图片、图片文件夹、视频、摄像头四类输入源，支持同步、线程和异步包装。
-- `visualization/`：YOLO 检测框美化绘制，支持中文标签、颜色映射、圆角框和文本尺寸缓存。
+| 命令 | 用途 |
+| --- | --- |
+| `odp-init` | 初始化运行目录 |
+| `odp-reset` | 安全清理运行产物，默认 dry-run |
+| `odp-import-dataset` | 导入数据集 zip，目前支持 VOC zip |
+| `odp-transform` | 数据格式转换、划分和 YOLO yaml 生成 |
+| `odp-validate` | 数据质量检查，生成 JSON/Markdown/HTML/CSV 报告 |
+| `odp-gen-config` | 生成 train / val / infer 运行配置 |
+| `odp-train` | YOLO 训练、训练日志、manifest、权重归档 |
+| `odp-val` | YOLO 模型评估，不归档权重 |
+| `odp-infer` | 图片、目录、视频、摄像头推理 |
+| `odp-plot-training` | 绘制训练曲线和指标摘要 |
 
-## 兼容说明
+## 模块边界
 
-保留少量带教脚本兼容入口，例如 `od_platform.cli.model_train`、`od_platform.validate_dateset`、`CameraFrameSource` 等旧名称。新代码应使用正式入口：
+- `common/`：路径、日志、计时、注册表、资源引用解析、系统信息。
+- `data_pipeline/`：VOC / COCO / YOLO 转换、划分、物化、dataset yaml 生成。
+- `data_validation/`：数据质检注册表、快照缓存、检查项、报告和返工清单。
+- `runtime_config/`：训练、评估、推理配置模型，支持默认值、YAML、CLI 合并。
+- `training/`：训练编排、日志、manifest、权重归档、训练图表。
+- `evaluation/`：D7 模型评估，提供 `ValService`、`ValResult`、`odp-val`。
+- `frame_source/`：图片、图片文件夹、视频、摄像头统一帧输入源。
+- `visualization/`：中文标签、颜色映射、圆角框、Pillow 文本渲染和尺寸缓存。
+- `inference/`：D8 推理服务、逐帧流水线、hook、sink、HUD、审计输出。
 
-- `od_platform.cli.train_model`
-- `od_platform.data_validation`
-- `CameraSource` / `ImageSource` / `ImageFolderSource` / `VideoSource`
+## 根目录参考资产说明
+
+根目录的 `inference.zip`、`visualization.zip`、`data_pipeline*.zip`、单个 `.py` 脚本和 HTML/Markdown 文档是带教发布的参考资产，用于对照实现。`odp-import-dataset` 只用于导入真实数据集压缩包，例如 `steel surface defect.v1i.voc.zip`，不要把参考代码 zip 当成数据集导入。
+
+## 桌面端规划
+
+`apps/desktop` 后续采用 PySide6。首版目标是推理演示界面：选择模型、选择输入源、选择类别映射、启动/暂停/停止、显示 FPS、推理耗时和当前帧信息。桌面端只调用 `od_platform.frame_source`、`od_platform.inference`、`od_platform.visualization`，不复制训练、推理或数据处理逻辑。
 
 ## 验证
 
@@ -83,12 +89,3 @@ conda activate odplat
 python -m ruff check apps/platform/src/od_platform
 python -m pytest apps/platform/src/od_platform/tests -q
 ```
-
-## 文档
-
-- [Platform README](apps/platform/README.md)
-- [Desktop README](apps/desktop/README.md)
-- [CLI README](apps/platform/src/od_platform/cli/README.md)
-- [ADR-001 Monorepo](docs/architecture/ADR-001-monorepo.md)
-- [ADR-002 Reset 安全设计](docs/architecture/ADR-002-reset-safety-design.md)
-- [ADR-003 数据转换注册表](docs/architecture/ADR-003-data-converter-registry.md)

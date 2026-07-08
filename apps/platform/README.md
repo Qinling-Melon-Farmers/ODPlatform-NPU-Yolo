@@ -1,6 +1,6 @@
 # Platform 端
 
-`apps/platform` 是 ODPlatform 的核心 Python 包，包名为 `od_platform`。当前承载命令行工具、数据流水线、数据质检、运行配置、训练、推理、推理可视化和统一帧输入源。
+`apps/platform` 是 ODPlatform 的核心 Python 包，包名为 `od_platform`。它承载命令行工具、数据流水线、数据质检、运行配置、训练、模型评估、推理、美化可视化和统一帧输入源。
 
 ## 安装
 
@@ -9,42 +9,42 @@ conda activate odplat
 pip install -e ./apps/platform
 ```
 
-安装后会提供以下命令：
+## 命令
 
 | 命令 | 用途 |
 | --- | --- |
 | `odp-init` | 初始化运行目录 |
 | `odp-reset` | 安全清理运行产物，默认 dry-run |
-| `odp-import-dataset` | 导入原始数据集压缩包 |
-| `odp-transform` | 数据格式转换、划分和 YOLO 数据集落盘 |
-| `odp-validate` | 数据质量检查并生成报告 |
-| `odp-gen-config` | 生成 train / val / infer 运行配置 |
-| `odp-train` | 启动 YOLO 训练 |
-| `odp-infer` | 启动 YOLO 推理，支持 D8 逐帧推理流水线 |
-| `odp-plot-training` | 生成训练曲线和指标摘要 |
+| `odp-import-dataset` | 导入原始数据集 zip |
+| `odp-transform` | 数据转换、划分和 YOLO 数据集落盘 |
+| `odp-validate` | 数据质量检查和报告生成 |
+| `odp-gen-config` | 生成运行配置 |
+| `odp-train` | YOLO 训练 |
+| `odp-val` | YOLO 模型评估 |
+| `odp-infer` | YOLO 推理，支持 D8 逐帧流水线 |
+| `odp-plot-training` | 训练结果图表 |
+
+## Steel 常用命令
+
+```powershell
+odp-transform --dataset steel-surface-defect --format pascal_voc --task detect
+odp-validate --dataset steel-surface-defect --executor your-name
+odp-train --yaml train --data steel-surface-defect --model yolo11n.pt --epochs 100 --batch 16 --imgsz 640 --device 0 --workers 4 --name steel-defect-yolo11n
+odp-val --config val --model models/trained/steel-defect-yolo11n-2-20260707-122829-yolo11n-best/best.pt --data steel-surface-defect --device 0
+odp-infer --model models/trained/steel-defect-yolo11n-2-20260707-122829-yolo11n-best/best.pt --source data/processed/steel-surface-defect/test/images --conf 0.25 --device 0 --name steel-defect-test
+```
 
 ## 模块边界
 
-- `common`：公共路径、日志、性能计时、注册表工具。
-- `runtime_config`：Pydantic 运行配置，支持默认值、YAML、CLI 三源合并。
-- `data_pipeline`：VOC / COCO / YOLO 转换、数据划分、数据集 YAML 生成。
-- `data_validation`：数据质检检查项、快照缓存、报告输出和返工清单。
-- `training`：训练执行、日志、审计、权重归档、结果可视化。
-- `inference`：推理执行、D8 逐帧推理流水线、结果摘要、HUD 和审计。
+- `common`：公共路径、日志、计时、注册表、引用解析。
+- `runtime_config`：Pydantic 运行配置，合并默认值、YAML 和 CLI。
+- `data_pipeline`：VOC / COCO / YOLO 转换、划分、YOLO yaml 生成。
+- `data_validation`：数据质检检查项、快照缓存、报告输出。
+- `training`：训练执行、日志、审计、权重归档、结果图表。
+- `evaluation`：模型评估，提供 `odp-val`，只产出指标和审计，不归档权重。
 - `frame_source`：图片、图片文件夹、视频、摄像头输入源。
-- `visualization`：检测结果美化绘制，支持中文标签映射、圆角框、Pillow 文本渲染和字体尺寸缓存。
-
-## 日志
-
-`common.logging_utils.get_logger()` 统一配置终端和文件日志：
-
-- 终端日志使用 `colorlog` 彩色输出。
-- 文件日志保持纯文本，不包含 ANSI 控制字符。
-- 训练和推理会生成独立运行日志、manifest 和结果摘要。
-
-## 兼容入口
-
-项目保留部分兼容路径以便旧带教脚本继续运行，例如 `od_platform.cli.model_train` 和 `od_platform.validate_dateset`。新代码应使用正式模块名：`train_model`、`data_validation`、`frame_source` 的新类名。
+- `visualization`：检测框美化、中文标签映射、颜色映射。
+- `inference`：推理执行、逐帧 pipeline、hook、sink、HUD 和审计。
 
 ## 验证
 
