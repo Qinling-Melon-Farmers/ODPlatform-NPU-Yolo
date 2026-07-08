@@ -77,7 +77,14 @@ pip install -r apps/desktop/requirements.txt
 python apps/desktop/main.py
 ```
 
-界面默认优先查找 `models/trained/**/*best*.pt`，并读取 `apps/platform/configs/runtime/infer_pipeline.yaml` 中的 steel 中文类别映射。输入源支持图片、视频、图片文件夹和摄像头；“多级流水线”默认开启，复用 D8 `--threaded` 推理路径。桌面端当前已接入 runtime 配置、pipeline 配置、task、conf、iou、imgsz、max_det、classes、device、name、max_frames 等主要推理参数。
+界面默认优先查找 `models/trained/**/*best*.pt`，并读取 `apps/platform/configs/runtime/infer_pipeline.yaml` 中的 steel 中文类别映射。输入源支持图片、视频、图片文件夹和摄像头；“多级流水线”默认开启，复用 D8 `--threaded` 推理路径。桌面端当前已接入 runtime 配置、pipeline 配置、task、conf、iou、imgsz、max_det、classes、device、name、max_frames 等主要推理参数，并支持暂停/继续、停止和打开输出目录。
+
+桌面端当前是工作台第一版，包含四个页面：
+
+- 推理：调用 D8 pipeline 完成图片、目录、视频、摄像头推理。
+- 模型评估：浏览 `runs/evaluation/**/odp_audit.json`。
+- 数据质检：浏览 `runs/data_validation/**/report.md` 或 `report.json`。
+- 训练结果：浏览 `runs/**/results.csv` 和对应权重摘要。
 
 ## 模块边界
 
@@ -98,8 +105,8 @@ python apps/desktop/main.py
 
 ## 后续重点
 
-- D8 推理流水线当前已具备 CLI、service、hook、sink、cancel、多级流水线和审计闭环。
-- 桌面端后续增加暂停/继续、评估结果、数据质检报告、训练曲线浏览和更完整的运行历史。
+- D8 推理流水线当前已具备 CLI、service、hook、sink、cancel、pause/resume、多级流水线和审计闭环。
+- 桌面端后续增加更完整的训练曲线图、运行历史筛选和任务启动表单。
 - Web 后端仍是预留目录，尚未进入当前阶段主线。
 
 ## 验证

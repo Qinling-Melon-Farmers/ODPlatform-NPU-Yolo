@@ -1,6 +1,6 @@
 """Inference service package."""
 
-from od_platform.inference.cancel import CancelToken, InferenceCancelled
+from od_platform.inference.cancel import CancelToken, InferenceCancelled, PauseToken
 from od_platform.inference.hooks import FrameEvent, InferHooks, ProgressEvent
 from od_platform.inference.pipeline import InferStats
 from od_platform.inference.pipeline_config import PipelineConfig, load_pipeline_config
@@ -25,6 +25,7 @@ __all__ = [
     "LocalFileSink",
     "NullSink",
     "OutputSink",
+    "PauseToken",
     "PipelineConfig",
     "ProgressEvent",
     "infer_yolo",

@@ -17,7 +17,7 @@ from od_platform.frame_source import (
     create_frame_source,
     detect_source_type,
 )
-from od_platform.inference.cancel import CancelToken
+from od_platform.inference.cancel import CancelToken, PauseToken
 from od_platform.inference.hooks import FrameEvent, InferHooks, ProgressEvent
 from od_platform.inference.overlay import Metrics, draw_hud
 from od_platform.inference.sinks import OutputSink
@@ -38,6 +38,8 @@ class InferStats:
     wall_seconds: float = 0.0
     inference_seconds: float = 0.0
     interrupted: bool = False
+    pause_events: int = 0
+    paused_seconds: float = 0.0
     fps: dict[str, float] = field(default_factory=dict)
     speed_ms: dict[str, float] = field(default_factory=dict)
     source_mode: str = "sequential"
@@ -67,6 +69,8 @@ class InferStats:
             "avg_fps": round(self.avg_fps, 2),
             "avg_latency_ms": round(self.avg_latency_ms, 3),
             "interrupted": self.interrupted,
+            "pause_events": self.pause_events,
+            "paused_seconds": round(self.paused_seconds, 4),
             "fps": self.fps,
             "speed_ms": self.speed_ms,
             "source_mode": self.source_mode,
@@ -116,6 +120,7 @@ class SequentialInferencePipeline:
         read_timeout: float = 5.0,
         hooks: InferHooks | None = None,
         cancel_token: CancelToken | None = None,
+        pause_token: PauseToken | None = None,
         max_frames: int | None = None,
     ) -> None:
         self.processor = processor
@@ -135,6 +140,7 @@ class SequentialInferencePipeline:
         self.read_timeout = max(0.1, read_timeout)
         self.hooks = hooks or InferHooks()
         self.cancel_token = cancel_token
+        self.pause_token = pause_token
         self.max_frames = max_frames
 
     def run(self) -> InferStats:
@@ -157,6 +163,10 @@ class SequentialInferencePipeline:
                 self.output_sink.open(self.output_dir, source.get_source_type())
                 opened_sink = True
                 for frame in source:
+                    if self._cancelled():
+                        stats.interrupted = True
+                        break
+                    self._wait_if_paused(stats)
                     if self._cancelled():
                         stats.interrupted = True
                         break
@@ -300,6 +310,8 @@ class SequentialInferencePipeline:
                         continue
                     if item is _STOP:
                         break
+                    if not self._wait_if_paused(stats):
+                        break
                     infer_start = time.perf_counter()
                     result, detections = self.processor.infer(item.image)
                     elapsed = time.perf_counter() - infer_start
@@ -316,6 +328,8 @@ class SequentialInferencePipeline:
                     if item is None:
                         continue
                     if item is _STOP:
+                        break
+                    if not self._wait_if_paused(stats):
                         break
                     render_start = time.perf_counter()
                     annotated = self.processor.draw(item.frame.image, item.result, item.detections)
@@ -352,6 +366,10 @@ class SequentialInferencePipeline:
                         raise errors[0]
                     continue
                 if item is _STOP:
+                    break
+                if not self._wait_if_paused(stats):
+                    stats.interrupted = True
+                    stop_event.set()
                     break
 
                 metrics.infer.update(item.infer_seconds * 1000.0)
@@ -429,6 +447,15 @@ class SequentialInferencePipeline:
 
     def _cancelled(self) -> bool:
         return self.cancel_token is not None and self.cancel_token.is_cancelled()
+
+    def _wait_if_paused(self, stats: InferStats) -> bool:
+        if self.pause_token is None or not self.pause_token.is_paused():
+            return True
+        stats.pause_events += 1
+        start = time.perf_counter()
+        ok = self.pause_token.wait_while_paused(self.cancel_token)
+        stats.paused_seconds += time.perf_counter() - start
+        return ok
 
     def _create_source(self):
         return create_frame_source(self.source, self.camera_config, stride=self.stride)

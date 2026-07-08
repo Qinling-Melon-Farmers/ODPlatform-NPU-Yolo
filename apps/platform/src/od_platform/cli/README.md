@@ -41,6 +41,8 @@ odp-infer --model models/trained/steel-defect-yolo11n-2-20260707-122829-yolo11n-
 
 `odp-infer --threaded` 会启用 D8 多级推理流水线，将读帧、推理、渲染和输出解耦。摄像头源使用 latest 缓冲，优先保证实时显示；视频和图片目录使用 bounded 缓冲，优先保证完整处理不丢帧。
 
+CLI 窗口显示模式下可用空格暂停/继续；桌面端和后续前端可通过 `PauseToken` 程序化暂停/恢复同一套 pipeline。
+
 ## 返回码
 
 - `odp-validate` 用于数据质检，返回 CI 可用状态码。

@@ -18,7 +18,7 @@ from od_platform.common import paths
 from od_platform.common.logging_utils import build_console_formatter, build_file_formatter
 from od_platform.common.refs import resolve_model
 from od_platform.common.system_utils import get_basic_device_info
-from od_platform.inference.cancel import CancelToken
+from od_platform.inference.cancel import CancelToken, PauseToken
 from od_platform.inference.hooks import InferHooks
 from od_platform.inference.pipeline import InferStats, SequentialInferencePipeline
 from od_platform.inference.pipeline_config import PipelineConfig, load_pipeline_config
@@ -184,6 +184,7 @@ class InferService:
         output_sink: OutputSink | None = None,
         hooks: InferHooks | None = None,
         cancel_token: CancelToken | None = None,
+        pause_token: PauseToken | None = None,
         max_frames: int | None = None,
     ) -> InferResult:
         """Run frame-by-frame inference and return an error result instead of raising."""
@@ -243,6 +244,7 @@ class InferService:
                     threaded=threaded,
                     hooks=hooks,
                     cancel_token=cancel_token,
+                    pause_token=pause_token,
                     max_frames=max_frames,
                 )
                 stats = pipeline.run()
@@ -329,6 +331,7 @@ def infer_yolo(
     output_sink: OutputSink | None = None,
     hooks: InferHooks | None = None,
     cancel_token: CancelToken | None = None,
+    pause_token: PauseToken | None = None,
     max_frames: int | None = None,
 ) -> InferResult:
     """Convenience entry point parallel to the training service API."""
@@ -345,6 +348,7 @@ def infer_yolo(
         output_sink=output_sink,
         hooks=hooks,
         cancel_token=cancel_token,
+        pause_token=pause_token,
         max_frames=max_frames,
     )
 

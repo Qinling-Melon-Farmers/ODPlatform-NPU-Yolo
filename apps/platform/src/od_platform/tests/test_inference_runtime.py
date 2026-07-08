@@ -12,6 +12,7 @@ import numpy as np
 
 from od_platform.cli.infer_model import main as infer_main
 from od_platform.frame_source import SourceType
+from od_platform.inference import PauseToken
 from od_platform.inference.pipeline_config import load_pipeline_config
 from od_platform.inference.service import build_inference_run_plan, run_inference
 from od_platform.inference.sinks import OutputSink
@@ -39,6 +40,16 @@ class TestInferenceRuntime(unittest.TestCase):
     def test_infer_config_rejects_conf_without_txt(self) -> None:
         with self.assertRaises(ValueError):
             YOLOInferConfig(model="best.pt", source="image.jpg", save_conf=True)
+
+    def test_pause_token_toggle_and_resume(self) -> None:
+        token = PauseToken()
+
+        self.assertFalse(token.is_paused())
+        self.assertTrue(token.toggle())
+        self.assertTrue(token.is_paused())
+        self.assertFalse(token.toggle())
+        self.assertFalse(token.is_paused())
+        self.assertTrue(token.wait_while_paused())
 
     def test_infer_config_exports_predict_kwargs(self) -> None:
         config = YOLOInferConfig(model="best.pt", source="image.jpg", save_txt=True, save_conf=True)

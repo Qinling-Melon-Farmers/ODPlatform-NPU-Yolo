@@ -7,7 +7,7 @@ from typing import Any
 from PySide6.QtCore import QObject, Signal, Slot
 from qt_sink import QtSignalSink
 
-from od_platform.inference import CancelToken, InferHooks, InferResult, infer_yolo
+from od_platform.inference import CancelToken, InferHooks, InferResult, PauseToken, infer_yolo
 
 
 class InferWorker(QObject):
@@ -39,6 +39,7 @@ class InferWorker(QObject):
     ) -> None:
         super().__init__()
         self._cancel_token = CancelToken()
+        self._pause_token = PauseToken()
         self._model = model
         self._source = source
         self._conf = conf
@@ -73,6 +74,11 @@ class InferWorker(QObject):
     def cancel(self) -> None:
         """Request graceful cancellation."""
         self._cancel_token.cancel()
+
+    @Slot()
+    def toggle_pause(self) -> bool:
+        """Toggle pause state and return whether the worker is now paused."""
+        return self._pause_token.toggle()
 
     def _run_inference(self) -> InferResult:
         cli_args: dict[str, Any] = {
@@ -109,6 +115,7 @@ class InferWorker(QObject):
             output_sink=sink,
             hooks=hooks,
             cancel_token=self._cancel_token,
+            pause_token=self._pause_token,
             threaded=self._threaded,
             max_frames=self._max_frames,
         )

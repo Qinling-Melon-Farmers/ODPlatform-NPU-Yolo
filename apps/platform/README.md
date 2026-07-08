@@ -47,7 +47,7 @@ odp-infer --model models/trained/steel-defect-yolo11n-2-20260707-122829-yolo11n-
 - `evaluation`：模型评估，提供 `odp-val`，只产出指标和审计，不归档权重。
 - `frame_source`：图片、图片文件夹、视频、摄像头输入源。
 - `visualization`：检测框美化、中文标签映射、颜色映射。
-- `inference`：推理执行、逐帧和多级 pipeline、hook、sink、HUD 和审计。
+- `inference`：推理执行、逐帧和多级 pipeline、hook、sink、cancel、pause/resume、HUD 和审计。
 
 ## 验证
 

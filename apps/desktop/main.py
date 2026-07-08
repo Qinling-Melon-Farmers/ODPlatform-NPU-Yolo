@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import csv
+import json
 import sys
 from pathlib import Path
 
@@ -12,8 +14,8 @@ if str(PLATFORM_SRC) not in sys.path:
 
 try:
     import cv2
-    from PySide6.QtCore import Qt, QThread, Slot
-    from PySide6.QtGui import QImage, QPixmap
+    from PySide6.QtCore import Qt, QThread, QUrl, Slot
+    from PySide6.QtGui import QDesktopServices, QImage, QPixmap
     from PySide6.QtWidgets import (
         QApplication,
         QCheckBox,
@@ -23,9 +25,12 @@ try:
         QHBoxLayout,
         QLabel,
         QLineEdit,
+        QListWidget,
         QMainWindow,
         QPushButton,
         QSpinBox,
+        QTabWidget,
+        QTextEdit,
         QVBoxLayout,
         QWidget,
     )
@@ -48,9 +53,10 @@ class MainWindow(QMainWindow):
     def __init__(self) -> None:
         super().__init__()
         self.setWindowTitle("ODPlatform 推理演示")
-        self.resize(1180, 760)
+        self.resize(1320, 820)
         self._thread: QThread | None = None
         self._worker: InferWorker | None = None
+        self._last_output_dir: Path | None = None
 
         self.model_edit = QLineEdit(str(_default_model()))
         self.source_edit = QLineEdit(str(_default_source()))
@@ -79,8 +85,12 @@ class MainWindow(QMainWindow):
         self.threaded_check.setChecked(True)
 
         self.start_button = QPushButton("启动")
+        self.pause_button = QPushButton("暂停")
         self.stop_button = QPushButton("停止")
+        self.open_output_button = QPushButton("打开输出目录")
+        self.pause_button.setEnabled(False)
         self.stop_button.setEnabled(False)
+        self.open_output_button.setEnabled(False)
 
         self.image_label = QLabel("等待启动推理")
         self.image_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
@@ -88,14 +98,57 @@ class MainWindow(QMainWindow):
         self.image_label.setStyleSheet("background: #111827; color: #d1d5db; border: 1px solid #374151;")
         self.status_label = QLabel("状态：就绪")
 
+        self.eval_list = QListWidget()
+        self.eval_detail = QTextEdit()
+        self.eval_detail.setReadOnly(True)
+        self.validation_list = QListWidget()
+        self.validation_detail = QTextEdit()
+        self.validation_detail.setReadOnly(True)
+        self.training_list = QListWidget()
+        self.training_detail = QTextEdit()
+        self.training_detail.setReadOnly(True)
+
         self._build_layout()
         self._connect_signals()
+        self._refresh_all_result_tabs()
 
     def closeEvent(self, event) -> None:  # noqa: N802 - Qt API name.
         self._stop_worker()
         super().closeEvent(event)
 
     def _build_layout(self) -> None:
+        tabs = QTabWidget()
+        tabs.addTab(self._build_inference_tab(), "推理")
+        tabs.addTab(
+            self._build_browser_tab(
+                self.eval_list,
+                self.eval_detail,
+                self._refresh_evaluation_results,
+                self._open_selected_eval,
+            ),
+            "模型评估",
+        )
+        tabs.addTab(
+            self._build_browser_tab(
+                self.validation_list,
+                self.validation_detail,
+                self._refresh_validation_reports,
+                self._open_selected_validation,
+            ),
+            "数据质检",
+        )
+        tabs.addTab(
+            self._build_browser_tab(
+                self.training_list,
+                self.training_detail,
+                self._refresh_training_results,
+                self._open_selected_training,
+            ),
+            "训练结果",
+        )
+        self.setCentralWidget(tabs)
+
+    def _build_inference_tab(self) -> QWidget:
         form = QFormLayout()
         form.addRow("模型", _with_buttons(self.model_edit, [("选择权重", self._browse_model)]))
         form.addRow(
@@ -125,7 +178,9 @@ class MainWindow(QMainWindow):
 
         controls = QHBoxLayout()
         controls.addWidget(self.start_button)
+        controls.addWidget(self.pause_button)
         controls.addWidget(self.stop_button)
+        controls.addWidget(self.open_output_button)
 
         side = QVBoxLayout()
         side.addLayout(form)
@@ -139,11 +194,44 @@ class MainWindow(QMainWindow):
 
         central = QWidget()
         central.setLayout(root)
-        self.setCentralWidget(central)
+        return central
+
+    def _build_browser_tab(
+        self,
+        list_widget: QListWidget,
+        detail_widget: QTextEdit,
+        refresh_callback,
+        open_callback,
+    ) -> QWidget:
+        refresh_button = QPushButton("刷新")
+        open_button = QPushButton("打开所在目录")
+        refresh_button.clicked.connect(refresh_callback)
+        open_button.clicked.connect(open_callback)
+
+        buttons = QHBoxLayout()
+        buttons.addWidget(refresh_button)
+        buttons.addWidget(open_button)
+        buttons.addStretch(1)
+
+        root = QHBoxLayout()
+        left = QVBoxLayout()
+        left.addLayout(buttons)
+        left.addWidget(list_widget)
+        root.addLayout(left, stretch=1)
+        root.addWidget(detail_widget, stretch=2)
+
+        page = QWidget()
+        page.setLayout(root)
+        return page
 
     def _connect_signals(self) -> None:
         self.start_button.clicked.connect(self._start_worker)
+        self.pause_button.clicked.connect(self._toggle_pause)
         self.stop_button.clicked.connect(self._stop_worker)
+        self.open_output_button.clicked.connect(self._open_last_output_dir)
+        self.eval_list.currentItemChanged.connect(lambda current, _previous: self._show_eval_item(current))
+        self.validation_list.currentItemChanged.connect(lambda current, _previous: self._show_validation_item(current))
+        self.training_list.currentItemChanged.connect(lambda current, _previous: self._show_training_item(current))
 
     @Slot()
     def _start_worker(self) -> None:
@@ -185,9 +273,23 @@ class MainWindow(QMainWindow):
         self._thread.finished.connect(self._cleanup_thread)
 
         self.start_button.setEnabled(False)
+        self.pause_button.setEnabled(True)
+        self.pause_button.setText("暂停")
         self.stop_button.setEnabled(True)
         self.status_label.setText("状态：推理运行中")
         self._thread.start()
+
+    @Slot()
+    def _toggle_pause(self) -> None:
+        if self._worker is None:
+            return
+        paused = self._worker.toggle_pause()
+        if paused:
+            self.pause_button.setText("继续")
+            self.status_label.setText("状态：已暂停")
+        else:
+            self.pause_button.setText("暂停")
+            self.status_label.setText("状态：推理运行中")
 
     @Slot()
     def _stop_worker(self) -> None:
@@ -215,6 +317,8 @@ class MainWindow(QMainWindow):
 
     @Slot(object)
     def _finish_success(self, result) -> None:
+        self._last_output_dir = Path(result.output_dir)
+        self.open_output_button.setEnabled(True)
         self.status_label.setText(f"状态：完成，输出目录 {result.output_dir}")
 
     @Slot(str)
@@ -230,7 +334,10 @@ class MainWindow(QMainWindow):
         self._worker = None
         self._thread = None
         self.start_button.setEnabled(True)
+        self.pause_button.setEnabled(False)
+        self.pause_button.setText("暂停")
         self.stop_button.setEnabled(False)
+        self._refresh_all_result_tabs()
 
     def _browse_model(self) -> None:
         path, _ = QFileDialog.getOpenFileName(self, "选择模型权重", str(ROOT_DIR), "PyTorch weights (*.pt);;All files (*)")
@@ -264,6 +371,151 @@ class MainWindow(QMainWindow):
 
     def _use_camera(self) -> None:
         self.source_edit.setText("0")
+
+    def _open_last_output_dir(self) -> None:
+        if self._last_output_dir is not None:
+            _open_path(self._last_output_dir)
+
+    def _refresh_all_result_tabs(self) -> None:
+        self._refresh_evaluation_results()
+        self._refresh_validation_reports()
+        self._refresh_training_results()
+
+    def _refresh_evaluation_results(self) -> None:
+        self._fill_list(
+            self.eval_list,
+            sorted((ROOT_DIR / "runs" / "evaluation").glob("**/odp_audit.json"), reverse=True),
+        )
+        if self.eval_list.count() == 0:
+            self.eval_detail.setPlainText("暂无模型评估结果。运行 odp-val 后会在这里显示。")
+
+    def _refresh_validation_reports(self) -> None:
+        paths = sorted((ROOT_DIR / "runs" / "data_validation").glob("**/report.md"), reverse=True)
+        if not paths:
+            paths = sorted((ROOT_DIR / "runs" / "data_validation").glob("**/report.json"), reverse=True)
+        self._fill_list(self.validation_list, paths)
+        if self.validation_list.count() == 0:
+            self.validation_detail.setPlainText("暂无数据质检报告。运行 odp-validate 后会在这里显示。")
+
+    def _refresh_training_results(self) -> None:
+        result_dirs = sorted(
+            {path.parent for path in (ROOT_DIR / "runs").glob("**/results.csv")},
+            reverse=True,
+        )
+        self._fill_list(self.training_list, result_dirs)
+        if self.training_list.count() == 0:
+            self.training_detail.setPlainText("暂无训练结果。运行 odp-train 后会在这里显示。")
+
+    @staticmethod
+    def _fill_list(list_widget: QListWidget, paths: list[Path]) -> None:
+        list_widget.clear()
+        for path in paths:
+            item_text = str(path.relative_to(ROOT_DIR)) if _is_relative_to(path, ROOT_DIR) else str(path)
+            list_widget.addItem(item_text)
+            list_widget.item(list_widget.count() - 1).setData(Qt.ItemDataRole.UserRole, str(path))
+        if list_widget.count():
+            list_widget.setCurrentRow(0)
+
+    def _show_eval_item(self, item) -> None:
+        if item is None:
+            return
+        path = Path(item.data(Qt.ItemDataRole.UserRole))
+        payload = _read_json(path)
+        lines = [
+            f"评估审计: {path}",
+            "",
+            f"运行名: {payload.get('run_name') or payload.get('audit_run_name')}",
+            f"模型: {payload.get('model_ref')}",
+            f"数据: {payload.get('data_ref') or payload.get('config', {}).get('data')}",
+            f"创建时间: {payload.get('created_at')}",
+            "",
+            "原始 JSON:",
+            json.dumps(payload, ensure_ascii=False, indent=2),
+        ]
+        self.eval_detail.setPlainText("\n".join(lines))
+
+    def _show_validation_item(self, item) -> None:
+        if item is None:
+            return
+        path = Path(item.data(Qt.ItemDataRole.UserRole))
+        if path.suffix.lower() == ".json":
+            payload = _read_json(path)
+            self.validation_detail.setPlainText(json.dumps(payload, ensure_ascii=False, indent=2))
+            return
+        self.validation_detail.setPlainText(path.read_text(encoding="utf-8", errors="replace"))
+
+    def _show_training_item(self, item) -> None:
+        if item is None:
+            return
+        run_dir = Path(item.data(Qt.ItemDataRole.UserRole))
+        results_csv = run_dir / "results.csv"
+        lines = [f"训练目录: {run_dir}", ""]
+        if results_csv.exists():
+            rows = _read_csv_rows(results_csv)
+            lines.append(f"results.csv: {results_csv}")
+            lines.append(f"epoch 数: {len(rows)}")
+            if rows:
+                last = rows[-1]
+                lines.append("")
+                lines.append("最后一轮指标:")
+                for key in ("epoch", "metrics/precision(B)", "metrics/recall(B)", "metrics/mAP50(B)", "metrics/mAP50-95(B)"):
+                    if key in last:
+                        lines.append(f"{key}: {last[key]}")
+        else:
+            lines.append("未找到 results.csv。")
+
+        weights = sorted((run_dir / "weights").glob("*.pt"))
+        if weights:
+            lines.append("")
+            lines.append("权重文件:")
+            lines.extend(f"- {path.name}" for path in weights)
+        self.training_detail.setPlainText("\n".join(lines))
+
+    def _open_selected_eval(self) -> None:
+        _open_selected_parent(self.eval_list)
+
+    def _open_selected_validation(self) -> None:
+        _open_selected_parent(self.validation_list)
+
+    def _open_selected_training(self) -> None:
+        item = self.training_list.currentItem()
+        if item is not None:
+            _open_path(Path(item.data(Qt.ItemDataRole.UserRole)))
+
+
+def _open_path(path: Path) -> None:
+    target = path if path.is_dir() else path.parent
+    QDesktopServices.openUrl(QUrl.fromLocalFile(str(target)))
+
+
+def _open_selected_parent(list_widget: QListWidget) -> None:
+    item = list_widget.currentItem()
+    if item is not None:
+        _open_path(Path(item.data(Qt.ItemDataRole.UserRole)))
+
+
+def _read_json(path: Path) -> dict:
+    try:
+        return json.loads(path.read_text(encoding="utf-8"))
+    except Exception as exc:  # noqa: BLE001 - result viewer should keep the UI alive.
+        return {"error": f"{type(exc).__name__}: {exc}", "path": str(path)}
+
+
+def _read_csv_rows(path: Path) -> list[dict[str, str]]:
+    try:
+        with path.open("r", encoding="utf-8", newline="") as handle:
+            return list(csv.DictReader(handle))
+    except UnicodeDecodeError:
+        with path.open("r", encoding="gbk", newline="") as handle:
+            return list(csv.DictReader(handle))
+
+
+def _is_relative_to(path: Path, base: Path) -> bool:
+    try:
+        path.relative_to(base)
+        return True
+    except ValueError:
+        return False
 
 
 def _with_buttons(line_edit: QLineEdit, buttons: list[tuple[str, object]]) -> QWidget:
