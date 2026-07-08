@@ -2,6 +2,8 @@
 
 `apps/platform` 是 ODPlatform 的核心 Python 包，包名为 `od_platform`。它承载命令行工具、数据流水线、数据质检、运行配置、训练、模型评估、推理、美化可视化和统一帧输入源。
 
+桌面端位于 `apps/desktop`，只调用本包提供的服务层和 hook/sink 接口，不在 UI 层重复实现 platform 业务逻辑。
+
 ## 安装
 
 ```powershell

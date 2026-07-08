@@ -1,6 +1,6 @@
 # ODPlatform
 
-ODPlatform 是生产实习阶段构建的目标检测开发平台。当前主线围绕 steel surface defect 数据集完成数据导入、格式转换、数据质检、训练、模型评估、推理、训练曲线和推理结果美化。
+ODPlatform 是生产实习阶段构建的目标检测开发平台。当前主线围绕 steel surface defect 数据集完成数据导入、格式转换、数据质检、训练、模型评估、推理、训练曲线、推理结果美化和桌面端推理演示。
 
 ## 当前状态
 
@@ -62,6 +62,18 @@ odp-infer --model models/trained/steel-defect-yolo11n-2-20260707-122829-yolo11n-
 | `odp-infer` | 图片、目录、视频、摄像头推理 |
 | `odp-plot-training` | 绘制训练曲线和指标摘要 |
 
+## 桌面端推理演示
+
+桌面端位于 `apps/desktop`，当前提供 PySide6 最小推理演示窗口，复用 platform 的 `infer_yolo()`、`InferHooks` 和 `OutputSink`，不复制 YOLO 推理逻辑。
+
+```powershell
+conda activate odplat
+pip install -r apps/desktop/requirements.txt
+python apps/desktop/main.py
+```
+
+界面默认优先查找 `models/trained/**/*best*.pt`，并读取 `apps/platform/configs/runtime/infer_pipeline.yaml` 中的 steel 中文类别映射。`odplat` 当前若未安装 PySide6，运行时会给出明确安装提示。
+
 ## 模块边界
 
 - `common/`：路径、日志、计时、注册表、资源引用解析、系统信息。
@@ -73,14 +85,17 @@ odp-infer --model models/trained/steel-defect-yolo11n-2-20260707-122829-yolo11n-
 - `frame_source/`：图片、图片文件夹、视频、摄像头统一帧输入源。
 - `visualization/`：中文标签、颜色映射、圆角框、Pillow 文本渲染和尺寸缓存。
 - `inference/`：D8 推理服务、逐帧流水线、hook、sink、HUD、审计输出。
+- `apps/desktop/`：PySide6 桌面端推理演示，只调用 platform 服务层。
 
 ## 根目录参考资产说明
 
 根目录的 `inference.zip`、`visualization.zip`、`data_pipeline*.zip`、单个 `.py` 脚本和 HTML/Markdown 文档是带教发布的参考资产，用于对照实现。`odp-import-dataset` 只用于导入真实数据集压缩包，例如 `steel surface defect.v1i.voc.zip`，不要把参考代码 zip 当成数据集导入。
 
-## 桌面端规划
+## 后续重点
 
-`apps/desktop` 后续采用 PySide6。首版目标是推理演示界面：选择模型、选择输入源、选择类别映射、启动/暂停/停止、显示 FPS、推理耗时和当前帧信息。桌面端只调用 `od_platform.frame_source`、`od_platform.inference`、`od_platform.visualization`，不复制训练、推理或数据处理逻辑。
+- D8 推理继续增强 pipeline / hook / sink 的扩展点，服务桌面端复用。
+- 桌面端后续增加评估结果、数据质检报告和训练曲线浏览。
+- Web 后端仍是预留目录，尚未进入当前阶段主线。
 
 ## 验证
 
@@ -88,4 +103,5 @@ odp-infer --model models/trained/steel-defect-yolo11n-2-20260707-122829-yolo11n-
 conda activate odplat
 python -m ruff check apps/platform/src/od_platform
 python -m pytest apps/platform/src/od_platform/tests -q
+python -m compileall apps/desktop
 ```
