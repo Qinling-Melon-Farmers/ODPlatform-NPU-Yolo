@@ -98,6 +98,46 @@ class BeautifyVisualizer:
         """Convert one Ultralytics result object into :class:`Detection` objects."""
         return detections_from_yolo_result(result, names=names, color_mapping=color_mapping)
 
+    @staticmethod
+    def from_yolo_results(
+        *,
+        boxes: Any,
+        confidences: Any,
+        labels: Sequence[str],
+        color_mapping: Mapping[str, tuple[int, int, int]] | None = None,
+    ) -> list[Detection]:
+        """Convert explicit YOLO arrays into :class:`Detection` objects.
+
+        This keeps compatibility with the teaching examples where detection
+        arrays are extracted before calling the visualizer.
+        """
+        color_mapping = color_mapping or {}
+        if hasattr(boxes, "detach"):
+            boxes = boxes.detach()
+        if hasattr(boxes, "cpu"):
+            boxes = boxes.cpu()
+        if hasattr(boxes, "numpy"):
+            boxes = boxes.numpy()
+        if hasattr(confidences, "detach"):
+            confidences = confidences.detach()
+        if hasattr(confidences, "cpu"):
+            confidences = confidences.cpu()
+        if hasattr(confidences, "numpy"):
+            confidences = confidences.numpy()
+
+        detections: list[Detection] = []
+        for box, confidence, label in zip(boxes, confidences, labels, strict=False):
+            label_text = str(label)
+            detections.append(
+                Detection(
+                    box=(int(box[0]), int(box[1]), int(box[2]), int(box[3])),
+                    confidence=float(confidence),
+                    label=label_text,
+                    color=color_mapping.get(label_text, (0, 255, 0)),
+                )
+            )
+        return detections
+
 
 def detections_from_yolo_result(
     result: Any,

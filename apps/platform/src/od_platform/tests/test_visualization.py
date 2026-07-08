@@ -59,6 +59,20 @@ class TestVisualization(unittest.TestCase):
         self.assertAlmostEqual(detections[0].confidence, 0.91)
         self.assertEqual(detections[1].color, (255, 0, 0))
 
+    def test_from_yolo_results_converts_explicit_arrays(self) -> None:
+        detections = BeautifyVisualizer.from_yolo_results(
+            boxes=np.array([[1, 2, 30, 40]], dtype=float),
+            confidences=np.array([0.8], dtype=float),
+            labels=["scratch"],
+            color_mapping={"scratch": (0, 0, 255)},
+        )
+
+        self.assertEqual(len(detections), 1)
+        self.assertEqual(detections[0].box, (1, 2, 30, 40))
+        self.assertEqual(detections[0].label, "scratch")
+        self.assertAlmostEqual(detections[0].confidence, 0.8)
+        self.assertEqual(detections[0].color, (0, 0, 255))
+
 
 if __name__ == "__main__":
     unittest.main()

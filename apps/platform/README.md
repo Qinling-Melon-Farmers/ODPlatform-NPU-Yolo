@@ -20,7 +20,7 @@ pip install -e ./apps/platform
 | `odp-validate` | 数据质量检查并生成报告 |
 | `odp-gen-config` | 生成 train / val / infer 运行配置 |
 | `odp-train` | 启动 YOLO 训练 |
-| `odp-infer` | 启动 YOLO 推理 |
+| `odp-infer` | 启动 YOLO 推理，支持 D8 逐帧推理流水线 |
 | `odp-plot-training` | 生成训练曲线和指标摘要 |
 
 ## 模块边界
@@ -30,7 +30,7 @@ pip install -e ./apps/platform
 - `data_pipeline`：VOC / COCO / YOLO 转换、数据划分、数据集 YAML 生成。
 - `data_validation`：数据质检检查项、快照缓存、报告输出和返工清单。
 - `training`：训练执行、日志、审计、权重归档、结果可视化。
-- `inference`：推理执行、结果摘要和审计。
+- `inference`：推理执行、D8 逐帧推理流水线、结果摘要、HUD 和审计。
 - `frame_source`：图片、图片文件夹、视频、摄像头输入源。
 - `visualization`：检测结果美化绘制，支持中文标签映射、圆角框、Pillow 文本渲染和字体尺寸缓存。
 

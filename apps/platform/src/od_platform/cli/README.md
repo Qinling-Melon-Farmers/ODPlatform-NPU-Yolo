@@ -32,6 +32,12 @@ odp-train --yaml train --data steel-surface-defect --model yolo11n.pt --epochs 1
 
 odp-gen-config infer --force
 odp-infer --config infer
+
+# 摄像头实时推理，使用生产实习根目录的示例权重
+odp-infer --model ..\train3-20250704-165500-yolo11n-best.pt --source 0 --show --conf 0.25 --device 0 --name camera-yolo-demo
+
+# 使用 D8 推理流水线配置启用美化绘制和 HUD
+odp-infer --model ..\train3-20250704-165500-yolo11n-best.pt --source 0 --show --pipeline-yaml ..\infer_pipeline.yaml --conf 0.25 --device 0 --name camera-beautify-demo
 ```
 
 ## 日志与返回码

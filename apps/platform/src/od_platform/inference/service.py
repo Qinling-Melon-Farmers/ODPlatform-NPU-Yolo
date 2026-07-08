@@ -7,6 +7,7 @@ import logging
 import re
 import shutil
 import sys
+from argparse import Namespace
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
@@ -17,7 +18,19 @@ from od_platform.common import paths
 from od_platform.common.logging_utils import build_console_formatter, build_file_formatter
 from od_platform.common.refs import resolve_model
 from od_platform.common.system_utils import get_basic_device_info
+from od_platform.inference.cancel import CancelToken
+from od_platform.inference.hooks import InferHooks
+from od_platform.inference.pipeline import InferStats, SequentialInferencePipeline
+from od_platform.inference.pipeline_config import PipelineConfig, load_pipeline_config
+from od_platform.inference.sinks import LocalFileSink, NullSink, OutputSink
+from od_platform.runtime_config.api import build_infer_config
 from od_platform.runtime_config.infer import YOLOInferConfig
+from od_platform.visualization import (
+    BeautifyVisualizer,
+    Detection,
+    DrawStyle,
+    detections_from_yolo_result,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -45,6 +58,20 @@ class InferenceRunResult:
     dry_run: bool
     manifest_path: Path
     summary_path: Path | None
+
+
+@dataclass(frozen=True)
+class InferResult:
+    """Result returned by the D8 frame-by-frame inference service."""
+
+    success: bool
+    output_dir: Path
+    stats: dict[str, Any]
+    infer_time: float | None = None
+    saved: bool = False
+    error: str | None = None
+    audit_path: Path | None = None
+    log_path: Path | None = None
 
 
 def build_inference_run_plan(config: YOLOInferConfig, *, now: datetime | None = None) -> InferenceRunPlan:
@@ -139,6 +166,187 @@ def run_inference(
         _close_logger(run_logger)
 
 
+class InferService:
+    """Orchestrate D5 config, frame sources, YOLO inference, visualization and sinks."""
+
+    def predict(
+        self,
+        yaml_path: str | Path | None = None,
+        pipeline_yaml: str | Path | None = None,
+        cli_args: dict[str, Any] | Namespace | None = None,
+        *,
+        beautify: bool = True,
+        rename_log: bool = True,
+        threaded: bool = False,
+        warmup_frames: int = 0,
+        window_name: str = "odp-infer",
+        show_info: bool = True,
+        output_sink: OutputSink | None = None,
+        hooks: InferHooks | None = None,
+        cancel_token: CancelToken | None = None,
+        max_frames: int | None = None,
+    ) -> InferResult:
+        """Run frame-by-frame inference and return an error result instead of raising."""
+        del threaded, rename_log
+        hooks = hooks or InferHooks()
+        start = perf_counter()
+        output_dir = paths.INFERENCE_RUNS_DIR / "unknown" / "failed"
+        log_path: Path | None = None
+        try:
+            config, merger = _build_service_config(yaml_path, cli_args)
+            if config.source is None:
+                raise ValueError("inference source is required")
+
+            plan = build_inference_run_plan(config)
+            output_dir = plan.source_run_dir
+            run_logger = _configure_inference_logger(plan.log_file)
+            log_path = plan.log_file
+            pipe_config = load_pipeline_config(pipeline_yaml)
+            model_ref = resolve_model(config.model)
+            source_ref = resolve_source(config.source)
+
+            try:
+                run_logger.info("frame pipeline inference run: %s", plan.audit_run_name)
+                run_logger.info("model ref: %s", model_ref)
+                run_logger.info("source ref: %s", source_ref)
+                run_logger.info("output dir: %s", output_dir)
+                run_logger.info("beautify: %s", beautify and pipe_config.viz_enabled)
+                _log_effective_config(config, run_logger, config_source=Path(yaml_path) if yaml_path else None)
+
+                from ultralytics import YOLO
+
+                model = YOLO(str(model_ref))
+                names = _model_names(model)
+                processor = _FrameProcessor(
+                    model=model,
+                    names=names,
+                    predict_kwargs=_frame_predict_kwargs(config),
+                    visualizer=_build_visualizer(names, pipe_config, enabled=beautify),
+                    style_kwargs=pipe_config.normalized_style_overrides(),
+                    use_label_mapping=pipe_config.use_label_mapping,
+                    color_mapping=pipe_config.color_mapping,
+                )
+                sink = output_sink or (LocalFileSink() if config.save else NullSink())
+                pipeline = SequentialInferencePipeline(
+                    processor=processor,
+                    source=source_ref,
+                    camera_config=pipe_config.build_camera_config(),
+                    output_dir=output_dir,
+                    output_sink=sink,
+                    save=config.save,
+                    show=config.show,
+                    show_info=show_info,
+                    window_name=window_name,
+                    warmup_frames=warmup_frames,
+                    stride=config.vid_stride,
+                    hooks=hooks,
+                    cancel_token=cancel_token,
+                    max_frames=max_frames,
+                )
+                stats = pipeline.run()
+                audit_path = write_pipeline_audit(
+                    plan,
+                    config,
+                    merger=merger.to_audit_log(),
+                    pipeline_config=pipe_config,
+                    source_ref=source_ref,
+                    model_ref=model_ref,
+                    stats=stats,
+                )
+                elapsed = perf_counter() - start
+                result = InferResult(
+                    success=True,
+                    output_dir=output_dir,
+                    stats=stats.to_dict(),
+                    infer_time=elapsed,
+                    saved=config.save,
+                    audit_path=audit_path,
+                    log_path=log_path,
+                )
+                run_logger.info("pipeline inference finished: frames=%s detections=%s", stats.frames, stats.detections)
+                run_logger.info("audit: %s", audit_path)
+                hooks.fire_complete(result)
+                return result
+            finally:
+                _close_logger(run_logger)
+        except Exception as exc:
+            logger.exception("pipeline inference failed: %s", exc)
+            hooks.fire_error(exc)
+            return InferResult(
+                success=False,
+                output_dir=output_dir,
+                stats={},
+                infer_time=perf_counter() - start,
+                error=str(exc),
+                log_path=log_path,
+            )
+
+
+@dataclass
+class _FrameProcessor:
+    model: Any
+    names: dict[int, str]
+    predict_kwargs: dict[str, Any]
+    visualizer: BeautifyVisualizer | None
+    style_kwargs: dict[str, Any]
+    use_label_mapping: bool
+    color_mapping: dict[str, tuple[int, int, int]]
+    _style: DrawStyle | None = None
+
+    def infer(self, image: Any) -> tuple[Any, list[Detection]]:
+        results = self.model(image, **self.predict_kwargs)
+        result = results[0] if isinstance(results, (list, tuple)) else results
+        detections = detections_from_yolo_result(result, names=self.names, color_mapping=self.color_mapping)
+        return result, detections
+
+    def draw(self, image: Any, result: Any, detections: list[Detection]) -> Any:
+        if self.visualizer is None:
+            return result.plot()
+        if self._style is None:
+            height, width = image.shape[:2]
+            self._style = DrawStyle.from_image_size(height, width, **self.style_kwargs)
+        return self.visualizer.draw(
+            image,
+            detections,
+            style=self._style,
+            use_label_mapping=self.use_label_mapping,
+        )
+
+
+def infer_yolo(
+    yaml_path: str | Path | None = None,
+    pipeline_yaml: str | Path | None = None,
+    cli_args: dict[str, Any] | Namespace | None = None,
+    *,
+    beautify: bool = True,
+    rename_log: bool = True,
+    threaded: bool = False,
+    warmup_frames: int = 0,
+    window_name: str = "odp-infer",
+    show_info: bool = True,
+    output_sink: OutputSink | None = None,
+    hooks: InferHooks | None = None,
+    cancel_token: CancelToken | None = None,
+    max_frames: int | None = None,
+) -> InferResult:
+    """Convenience entry point parallel to the training service API."""
+    return InferService().predict(
+        yaml_path=yaml_path,
+        pipeline_yaml=pipeline_yaml,
+        cli_args=cli_args,
+        beautify=beautify,
+        rename_log=rename_log,
+        threaded=threaded,
+        warmup_frames=warmup_frames,
+        window_name=window_name,
+        show_info=show_info,
+        output_sink=output_sink,
+        hooks=hooks,
+        cancel_token=cancel_token,
+        max_frames=max_frames,
+    )
+
+
 def resolve_source(source: str | Path | int) -> str | Path:
     """Resolve local path sources relative to the workspace root while preserving cameras and URLs."""
     source_text = str(source)
@@ -222,6 +430,39 @@ def write_inference_manifest(
     return output
 
 
+def write_pipeline_audit(
+    plan: InferenceRunPlan,
+    config: YOLOInferConfig,
+    *,
+    merger: dict[str, Any],
+    pipeline_config: PipelineConfig,
+    source_ref: str | Path,
+    model_ref: Path,
+    stats: InferStats,
+) -> Path:
+    """Write D8 frame-pipeline audit metadata."""
+    plan.source_run_dir.mkdir(parents=True, exist_ok=True)
+    payload = {
+        "run_name": plan.source_run_name,
+        "audit_run_name": plan.audit_run_name,
+        "created_at": datetime.now().isoformat(timespec="seconds"),
+        "config": config.audit_snapshot(),
+        "merger": merger,
+        "pipeline": pipeline_config.to_audit(),
+        "model_ref": str(model_ref),
+        "source_ref": str(source_ref),
+        "device_info": get_basic_device_info(),
+        "outputs": {
+            "run_dir": str(plan.source_run_dir),
+            "log_file": str(plan.log_file),
+        },
+        "stats": stats.to_dict(),
+    }
+    output = plan.source_run_dir / "odp_audit.json"
+    output.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
+    return output
+
+
 def copy_model_to_checkpoints(model_path: Path) -> Path:
     """Copy a model file into models/checkpoints for stable local references."""
     paths.CHECKPOINTS_DIR.mkdir(parents=True, exist_ok=True)
@@ -273,6 +514,59 @@ def _log_effective_config(config: YOLOInferConfig, target_logger: logging.Logger
     for field_name in config.__class__.model_fields:
         target_logger.info("%-20s: %s (source: %s)", field_name, getattr(config, field_name, None), source)
     target_logger.info("=" * 60)
+
+
+def _build_service_config(
+    yaml_path: str | Path | None,
+    cli_args: dict[str, Any] | Namespace | None,
+) -> tuple[YOLOInferConfig, Any]:
+    if isinstance(cli_args, dict):
+        cli_args = Namespace(**cli_args)
+    config, merger = build_infer_config(yaml_path=yaml_path, cli_args=cli_args, dry_run=False)
+    if config is None:
+        raise RuntimeError("inference config preview unexpectedly returned None")
+    return config, merger
+
+
+def _frame_predict_kwargs(config: YOLOInferConfig) -> dict[str, Any]:
+    keys = (
+        "conf",
+        "iou",
+        "imgsz",
+        "max_det",
+        "classes",
+        "agnostic_nms",
+        "augment",
+        "device",
+        "retina_masks",
+    )
+    kwargs = {key: getattr(config, key) for key in keys if getattr(config, key, None) is not None}
+    kwargs["verbose"] = False
+    return kwargs
+
+
+def _model_names(model: Any) -> dict[int, str]:
+    names = getattr(model, "names", {}) or {}
+    if isinstance(names, dict):
+        return {int(key): str(value) for key, value in names.items()}
+    return {index: str(value) for index, value in enumerate(names)}
+
+
+def _build_visualizer(
+    labels: dict[int, str],
+    pipeline_config: PipelineConfig,
+    *,
+    enabled: bool,
+) -> BeautifyVisualizer | None:
+    if not enabled or not pipeline_config.viz_enabled:
+        return None
+    return BeautifyVisualizer(
+        labels=[labels[key] for key in sorted(labels)],
+        label_mapping=pipeline_config.label_mapping,
+        color_mapping=pipeline_config.color_mapping,
+        default_color=pipeline_config.default_color,
+        font_path=pipeline_config.font_path,
+    )
 
 
 def _close_logger(run_logger: logging.Logger) -> None:

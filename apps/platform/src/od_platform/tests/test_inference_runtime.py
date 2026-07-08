@@ -1,4 +1,5 @@
 import json
+import logging
 import sys
 import tempfile
 import types
@@ -7,14 +8,25 @@ from datetime import datetime
 from pathlib import Path
 from unittest.mock import patch
 
+import numpy as np
+
 from od_platform.cli.infer_model import main as infer_main
+from od_platform.frame_source import SourceType
+from od_platform.inference.pipeline_config import load_pipeline_config
 from od_platform.inference.service import build_inference_run_plan, run_inference
+from od_platform.inference.sinks import OutputSink
 from od_platform.runtime_config.generator import default_infer_config, write_infer_template
 from od_platform.runtime_config.infer import YOLOInferConfig
 from od_platform.runtime_config.loaders import load_infer_config
 
 
 class TestInferenceRuntime(unittest.TestCase):
+    def _close_project_logger(self) -> None:
+        logger = logging.getLogger("od_platform")
+        for handler in list(logger.handlers):
+            handler.close()
+            logger.removeHandler(handler)
+
     def _patch_inference_paths(self, root: Path):
         return patch.multiple(
             "od_platform.inference.service.paths",
@@ -119,6 +131,144 @@ class TestInferenceRuntime(unittest.TestCase):
             summary = json.loads(result.summary_path.read_text(encoding="utf-8"))
             self.assertEqual(summary["images"], 1)
             self.assertEqual(summary["detections"], 2)
+
+    def test_pipeline_config_parses_visualization_options(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            path = Path(temp_dir) / "infer_pipeline.yaml"
+            path.write_text(
+                """
+frame_source:
+  camera:
+    width: 640
+    height: 480
+    backend: msmf
+visualization:
+  enabled: true
+  use_label_mapping: true
+  label_mapping:
+    scratch: 划痕
+  color_mapping:
+    scratch: [0, 0, 255]
+  default_color: [0, 255, 0]
+  style:
+    box_thickness: 3
+    text_color: [255, 255, 255]
+""",
+                encoding="utf-8",
+            )
+
+            config = load_pipeline_config(path)
+
+        self.assertEqual(config.build_camera_config().width, 640)
+        self.assertEqual(config.label_mapping["scratch"], "划痕")
+        self.assertEqual(config.color_mapping["scratch"], (0, 0, 255))
+        self.assertEqual(config.normalized_style_overrides()["line_width"], 3)
+        self.assertEqual(config.normalized_style_overrides()["text_color"], (255, 255, 255))
+
+    def test_infer_cli_pipeline_writes_audit_with_fake_yolo(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            model_path = root / "best.pt"
+            source_path = root / "image.jpg"
+            model_path.write_bytes(b"model")
+            source_path.write_bytes(b"image")
+
+            class FakeBoxes:
+                data = np.array([[1, 2, 30, 40, 0.91, 0]], dtype=float)
+
+            class FakeResult:
+                boxes = FakeBoxes()
+                names = {0: "scratch"}
+                speed = {"preprocess": 1.0, "inference": 2.0, "postprocess": 3.0}
+
+                def plot(self):
+                    return np.zeros((20, 30, 3), dtype=np.uint8)
+
+            class FakeYOLO:
+                names = {0: "scratch"}
+
+                def __init__(self, model: str) -> None:
+                    self.model = model
+
+                def __call__(self, image, **kwargs):
+                    return [FakeResult()]
+
+            class FakeSource:
+                def __init__(self, source, camera_config=None, stride=1):
+                    self.source = source
+                    self._done = False
+
+                def __enter__(self):
+                    return self
+
+                def __exit__(self, exc_type, exc_value, exc_tb):
+                    return False
+
+                def __iter__(self):
+                    return self
+
+                def __next__(self):
+                    if self._done:
+                        raise StopIteration
+                    self._done = True
+                    from od_platform.frame_source import Frame, FrameInfo
+
+                    return Frame(
+                        image=np.zeros((20, 30, 3), dtype=np.uint8),
+                        info=FrameInfo(
+                            width=30,
+                            height=20,
+                            source_type=SourceType.IMAGE,
+                            source_path=str(source_path),
+                            filename="image.jpg",
+                        ),
+                    )
+
+                def get_source_type(self):
+                    return SourceType.IMAGE
+
+            class CollectingSink(OutputSink):
+                def __init__(self):
+                    self.frames = 0
+
+                def open(self, output_dir: Path, source_type: SourceType) -> None:
+                    self.output_dir = output_dir
+
+                def write(self, frame, annotated: np.ndarray) -> None:
+                    self.frames += 1
+
+                def close(self) -> None:
+                    return None
+
+            fake_ultralytics = types.SimpleNamespace(YOLO=FakeYOLO, __version__="test")
+            with (
+                self._patch_inference_paths(root),
+                patch.dict(sys.modules, {"ultralytics": fake_ultralytics}),
+                patch("od_platform.inference.pipeline.create_frame_source", FakeSource),
+            ):
+                try:
+                    code = infer_main(
+                        [
+                            "--model",
+                            str(model_path),
+                            "--source",
+                            str(source_path),
+                            "--name",
+                            "demo",
+                            "--max-frames",
+                            "1",
+                            "--no-save",
+                        ]
+                    )
+                finally:
+                    self._close_project_logger()
+
+            self.assertEqual(code, 0)
+            audit = root / "runs" / "inference" / "detect" / "demo" / "odp_audit.json"
+            self.assertTrue(audit.exists())
+            payload = json.loads(audit.read_text(encoding="utf-8"))
+            self.assertEqual(payload["stats"]["frames"], 1)
+            self.assertEqual(payload["stats"]["detections"], 1)
 
 
 if __name__ == "__main__":

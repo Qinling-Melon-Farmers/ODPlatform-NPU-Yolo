@@ -48,6 +48,12 @@ odp-gen-config infer --force
 # 训练、推理、训练曲线
 odp-train --yaml train --data steel-surface-defect --model yolo11n.pt --epochs 100 --batch 16 --imgsz 640 --device 0
 odp-infer --config infer
+
+# 实时摄像头推理，使用生产实习根目录的带教示例权重
+odp-infer --model ..\train3-20250704-165500-yolo11n-best.pt --source 0 --show --conf 0.25 --device 0 --name camera-yolo-demo
+
+# D8 推理流水线：帧源配置 + 美化绘制 + HUD + odp_audit.json
+odp-infer --model ..\train3-20250704-165500-yolo11n-best.pt --source 0 --show --pipeline-yaml ..\infer_pipeline.yaml --conf 0.25 --device 0 --name camera-beautify-demo
 odp-plot-training runs/detect/train/results.csv --output runs/detect/train/training_results.png
 ```
 
@@ -58,7 +64,7 @@ odp-plot-training runs/detect/train/results.csv --output runs/detect/train/train
 - `data_validation/`：数据质检注册表、快照、检查项、JSON/Markdown/HTML/CSV 报告。
 - `runtime_config/`：训练、验证、推理配置模型，支持默认值、YAML、CLI 合并。
 - `training/`：YOLO 训练、训练产物审计、权重归档、结果图表。
-- `inference/`：YOLO 推理、审计清单和结果摘要。
+- `inference/`：YOLO 推理、D8 逐帧推理流水线、摄像头/图片/视频源、HUD、结果落盘和审计清单。
 - `frame_source/`：图片、图片文件夹、视频、摄像头四类输入源，支持同步、线程和异步包装。
 - `visualization/`：YOLO 检测框美化绘制，支持中文标签、颜色映射、圆角框和文本尺寸缓存。
 
