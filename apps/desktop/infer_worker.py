@@ -36,6 +36,7 @@ class InferWorker(QObject):
         save_outputs: bool = False,
         threaded: bool = True,
         max_frames: int | None = None,
+        vid_stride: int | None = None,
     ) -> None:
         super().__init__()
         self._cancel_token = CancelToken()
@@ -55,6 +56,7 @@ class InferWorker(QObject):
         self._save_outputs = save_outputs
         self._threaded = threaded
         self._max_frames = max_frames
+        self._vid_stride = vid_stride
 
     @Slot()
     def run(self) -> None:
@@ -99,6 +101,8 @@ class InferWorker(QObject):
             cli_args["max_det"] = self._max_det
         if self._classes:
             cli_args["classes"] = [int(item.strip()) for item in self._classes.split(",") if item.strip()]
+        if self._vid_stride and self._vid_stride > 1:
+            cli_args["vid_stride"] = self._vid_stride
 
         sink = QtSignalSink(self.frame_ready.emit, save_to_disk=self._save_outputs)
         hooks = InferHooks(

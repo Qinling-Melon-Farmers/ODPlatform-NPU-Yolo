@@ -75,7 +75,7 @@ class MainWindow(QMainWindow):
         self.runtime_edit = QLineEdit("")
         self.pipeline_edit = QLineEdit(str(ROOT_DIR / "apps" / "platform" / "configs" / "runtime" / "infer_pipeline.yaml"))
         self.task_combo = QComboBox()
-        self.task_combo.addItems(["detect", "segment"])
+        self.task_combo.addItems(["detect"])
         self.conf_edit = QLineEdit("0.25")
         self.iou_edit = QLineEdit("0.70")
         self.device_edit = QLineEdit("0")
@@ -92,6 +92,9 @@ class MainWindow(QMainWindow):
         self.max_frames_spin = QSpinBox()
         self.max_frames_spin.setRange(0, 1_000_000)
         self.max_frames_spin.setSpecialValueText("不限")
+        self.vid_stride_spin = QSpinBox()
+        self.vid_stride_spin.setRange(1, 10_000)
+        self.vid_stride_spin.setValue(1)
         self.save_check = QCheckBox("保存推理结果")
         self.threaded_check = QCheckBox("多级流水线")
         self.threaded_check.setChecked(True)
@@ -141,7 +144,7 @@ class MainWindow(QMainWindow):
         self.next_plot_button = QPushButton("下一张图")
 
         self.desktop_task_combo = QComboBox()
-        self.desktop_task_combo.addItems(["导入数据集", "数据转换", "数据质检", "模型评估", "模型训练"])
+        self.desktop_task_combo.addItems(["导入数据集", "数据转换", "数据质检", "模型评估", "模型训练", "项目重置", "训练曲线生成"])
         self.task_stack = QStackedWidget()
 
         self.import_dataset_edit = QLineEdit("steel-surface-defect")
@@ -155,13 +158,13 @@ class MainWindow(QMainWindow):
         self.transform_format_combo = QComboBox()
         self.transform_format_combo.addItems(["pascal_voc", "coco", "yolo"])
         self.transform_task_combo = QComboBox()
-        self.transform_task_combo.addItems(["detect", "segment"])
+        self.transform_task_combo.addItems(["detect"])
         self.transform_extra_args_edit = QLineEdit("")
         self.transform_extra_args_edit.setPlaceholderText("例如 --split-strategy random --seed 1210")
 
         self.validate_dataset_edit = QLineEdit("steel-surface-defect")
         self.validate_task_combo = QComboBox()
-        self.validate_task_combo.addItems(["detect", "segment"])
+        self.validate_task_combo.addItems(["detect"])
         self.validate_executor_edit = QLineEdit("")
         self.validate_extra_args_edit = QLineEdit("")
         self.validate_extra_args_edit.setPlaceholderText("例如 --verbose")
@@ -194,6 +197,23 @@ class MainWindow(QMainWindow):
         self.train_dry_run_check.setChecked(True)
         self.train_extra_args_edit = QLineEdit("")
         self.train_extra_args_edit.setPlaceholderText("例如 --imgsz 640 --no-archive")
+
+        self.reset_dry_run_check = QCheckBox("dry-run：只预览，不删除")
+        self.reset_dry_run_check.setChecked(True)
+        self.reset_yes_check = QCheckBox("确认执行 --yes")
+        self.reset_force_check = QCheckBox("跳过交互确认 --force")
+        self.reset_backup_check = QCheckBox("删除前备份 --backup")
+        self.reset_extra_args_edit = QLineEdit("")
+        self.reset_extra_args_edit.setPlaceholderText("追加 CLI 参数")
+
+        self.plot_csv_edit = QLineEdit(str(_default_results_csv()))
+        self.plot_output_edit = QLineEdit("")
+        self.plot_output_edit.setPlaceholderText("输出 PNG 路径；留空则使用默认输出")
+        self.plot_summary_edit = QLineEdit("")
+        self.plot_summary_edit.setPlaceholderText("可选 summary JSON 路径")
+        self.plot_matplotx_check = QCheckBox("启用 matplotx 风格")
+        self.plot_extra_args_edit = QLineEdit("")
+        self.plot_extra_args_edit.setPlaceholderText("追加 CLI 参数")
 
         self.task_command_preview = QTextEdit()
         self.task_command_preview.setReadOnly(True)
@@ -312,6 +332,7 @@ class MainWindow(QMainWindow):
         form.addRow("设备", self.device_edit)
         form.addRow("运行名", self.name_edit)
         form.addRow("最多帧数", self.max_frames_spin)
+        form.addRow("视频抽帧间隔", self.vid_stride_spin)
         form.addRow("", self.save_check)
         form.addRow("", self.threaded_check)
 
@@ -493,6 +514,30 @@ class MainWindow(QMainWindow):
                 ],
             )
         )
+        self.task_stack.addWidget(
+            _form_page(
+                "项目重置参数",
+                [
+                    ("", self.reset_dry_run_check),
+                    ("", self.reset_backup_check),
+                    ("", self.reset_yes_check),
+                    ("", self.reset_force_check),
+                    ("追加参数", self.reset_extra_args_edit),
+                ],
+            )
+        )
+        self.task_stack.addWidget(
+            _form_page(
+                "训练曲线生成参数",
+                [
+                    ("results.csv", _with_buttons(self.plot_csv_edit, [("选择 CSV", self._browse_plot_csv)])),
+                    ("输出图片", _with_buttons(self.plot_output_edit, [("选择 PNG", self._browse_plot_output)])),
+                    ("摘要 JSON", _with_buttons(self.plot_summary_edit, [("选择 JSON", self._browse_plot_summary)])),
+                    ("", self.plot_matplotx_check),
+                    ("追加参数", self.plot_extra_args_edit),
+                ],
+            )
+        )
 
         controls = QHBoxLayout()
         controls.addWidget(self.task_start_button)
@@ -569,6 +614,11 @@ class MainWindow(QMainWindow):
             self.train_executor_edit,
             self.train_name_edit,
             self.train_extra_args_edit,
+            self.reset_extra_args_edit,
+            self.plot_csv_edit,
+            self.plot_output_edit,
+            self.plot_summary_edit,
+            self.plot_extra_args_edit,
         ):
             line_edit.textChanged.connect(lambda _text: self._refresh_task_preview())
         for combo_box in (
@@ -581,6 +631,14 @@ class MainWindow(QMainWindow):
             spin_box.valueChanged.connect(lambda _value: self._refresh_task_preview())
         self.import_overwrite_check.stateChanged.connect(lambda _value: self._refresh_task_preview())
         self.train_dry_run_check.stateChanged.connect(lambda _value: self._refresh_task_preview())
+        for check_box in (
+            self.reset_dry_run_check,
+            self.reset_yes_check,
+            self.reset_force_check,
+            self.reset_backup_check,
+            self.plot_matplotx_check,
+        ):
+            check_box.stateChanged.connect(lambda _value: self._refresh_task_preview())
         self.task_start_button.clicked.connect(self._start_task)
         self.task_stop_button.clicked.connect(self._stop_task)
         self._switch_task_page(self.desktop_task_combo.currentIndex())
@@ -619,6 +677,7 @@ class MainWindow(QMainWindow):
             save_outputs=self.save_check.isChecked(),
             threaded=self.threaded_check.isChecked(),
             max_frames=self.max_frames_spin.value() or None,
+            vid_stride=self.vid_stride_spin.value(),
         )
         self._worker.moveToThread(self._thread)
         self._thread.started.connect(self._worker.run)
@@ -887,6 +946,35 @@ class MainWindow(QMainWindow):
                 args.append("--dry-run")
             return "od_platform.cli.train_model", [*args, *extra_args]
 
+        if task_name == "项目重置":
+            args: list[str] = []
+            extra_args = _split_extra_args(self.reset_extra_args_edit.text().strip())
+            if self.reset_dry_run_check.isChecked():
+                args.append("--dry-run")
+            if self.reset_backup_check.isChecked():
+                args.append("--backup")
+            if self.reset_yes_check.isChecked():
+                args.append("--yes")
+            if self.reset_force_check.isChecked():
+                args.append("--force")
+            return "od_platform.cli.reset_project", [*args, *extra_args]
+
+        if task_name == "训练曲线生成":
+            csv_path = self.plot_csv_edit.text().strip()
+            output_path = self.plot_output_edit.text().strip()
+            summary_path = self.plot_summary_edit.text().strip()
+            extra_args = _split_extra_args(self.plot_extra_args_edit.text().strip())
+            if not csv_path:
+                raise ValueError("训练曲线生成需要填写 results.csv")
+            args = [csv_path]
+            if output_path:
+                args.extend(["--output", output_path])
+            if summary_path:
+                args.extend(["--summary", summary_path])
+            if self.plot_matplotx_check.isChecked():
+                args.append("--matplotx")
+            return "od_platform.cli.plot_training", [*args, *extra_args]
+
         raise ValueError(f"未知任务: {task_name}")
 
     def _browse_model(self) -> None:
@@ -908,6 +996,21 @@ class MainWindow(QMainWindow):
         path, _ = QFileDialog.getOpenFileName(self, "选择数据集 zip", str(ROOT_DIR.parent), "Zip files (*.zip);;All files (*)")
         if path:
             self.import_zip_edit.setText(path)
+
+    def _browse_plot_csv(self) -> None:
+        path, _ = QFileDialog.getOpenFileName(self, "选择 results.csv", str(ROOT_DIR / "runs"), "CSV files (*.csv);;All files (*)")
+        if path:
+            self.plot_csv_edit.setText(path)
+
+    def _browse_plot_output(self) -> None:
+        path, _ = QFileDialog.getSaveFileName(self, "选择输出图片", str(ROOT_DIR / "runs" / "training_summary.png"), "PNG files (*.png);;All files (*)")
+        if path:
+            self.plot_output_edit.setText(path)
+
+    def _browse_plot_summary(self) -> None:
+        path, _ = QFileDialog.getSaveFileName(self, "选择摘要 JSON", str(ROOT_DIR / "runs" / "training_summary.json"), "JSON files (*.json);;All files (*)")
+        if path:
+            self.plot_summary_edit.setText(path)
 
     def _browse_media_source(self) -> None:
         path, _ = QFileDialog.getOpenFileName(
@@ -1248,6 +1351,13 @@ def _default_source() -> str:
         if first is not None:
             return str(first)
     return "0"
+
+
+def _default_results_csv() -> Path:
+    candidates = sorted((ROOT_DIR / "runs").glob("**/results.csv"))
+    if candidates:
+        return candidates[-1]
+    return ROOT_DIR / "runs" / "detect" / "train" / "results.csv"
 
 
 def _load_stylesheet() -> str:

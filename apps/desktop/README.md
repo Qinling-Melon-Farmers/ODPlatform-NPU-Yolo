@@ -1,62 +1,56 @@
-# Desktop 端
+# ODPlatform Desktop
 
-`apps/desktop` 是 ODPlatform 的桌面端应用目录。桌面端采用 PySide6，定位是调用 platform 后端能力的可视化工作台，不在本目录重复实现训练、推理、数据质检或数据转换逻辑。
+`apps/desktop` 是 SteelDefect Studio 的 PySide6 桌面工作台。桌面端只调用 platform 服务层和现有 CLI，不在 UI 层复制训练、推理、质检或数据转换逻辑。
 
-## 当前状态
-
-已提供工作台第一版入口：
+## 启动
 
 ```powershell
 conda activate odplat
-pip install -r apps/desktop/requirements.txt
+pip install -r requirements.txt
+pip install -e ./apps/platform
 python apps/desktop/main.py
 ```
 
-当前界面支持：
+也可以只安装桌面依赖：
 
-- 选择模型权重，默认优先查找 `models/trained/**/*best*.pt`。
-- 选择输入源：图片、图片目录、视频，或直接使用摄像头 `0`。
-- 读取 `apps/platform/configs/runtime/infer_pipeline.yaml` 中的 steel 中文类别映射和美化框配置。
-- 可选推理运行配置，并可设置 task、conf、iou、imgsz、max_det、classes、device、name、max_frames。
-- 启动、暂停/继续、停止推理，并显示实时画面、FPS、累计检测数量、输出目录和运行日志。
-- 默认开启“多级流水线”，复用 D8 `--threaded` 路径；摄像头源使用 latest 缓冲保证实时性，图片目录/视频源使用 bounded 缓冲保证不丢帧。
-- 通过 `QtSignalSink` 和 `InferHooks` 复用 platform 推理服务，不在 UI 层直接实现 YOLO 推理。
-- 通过 `style.qss` 提供统一深色主题，保持 UI 代码和视觉样式分离。
-- 对评估、质检、训练结果提供筛选搜索。
-- 对训练结果提供 PNG 曲线内嵌预览。
-- 通过后台子进程调用现有 CLI，支持数据导入、转换、质检、评估和训练任务启动；参数区按任务类型切换页面，训练默认 dry-run。
+```powershell
+pip install -r apps/desktop/requirements.txt
+```
 
-工作台页面：
+## 当前能力
 
-- 推理：图片、目录、视频、摄像头推理。
-- 模型评估：筛选并读取 `runs/evaluation/**/odp_audit.json`。
-- 数据质检：筛选并读取 `runs/data_validation/**/report.md` 或 `report.json`。
-- 训练结果：筛选并读取 `runs/**/results.csv`、最后一轮指标、可用图表和 `weights/*.pt` 摘要。
-- 任务启动：按任务类型显示独立参数页，并调用 `odp-import-dataset`、`odp-transform`、`odp-validate`、`odp-val`、`odp-train` 对应 CLI 模块。
+- 推理：支持图片、图片文件夹、视频、摄像头 `0` 或其他摄像头编号。
+- 推理参数：支持模型、输入源、runtime 配置、pipeline 配置、detect task、conf、iou、imgsz、max_det、classes、device、name、max_frames、视频抽帧间隔。
+- D8 多级流水线：默认使用 platform 的 `--threaded` 路径，摄像头采用 latest 缓冲，视频/目录采用 bounded 缓冲。
+- 交互控制：启动、暂停、继续、停止推理，显示实时画面、FPS、检测数量、输出目录和日志。
+- 结果浏览：模型评估、数据质检、训练结果支持筛选、搜索和摘要查看。
+- 训练曲线：支持 `results.csv` 对应图表内嵌预览。
+- 任务启动：按任务类型切换独立参数页，通过后台子进程调用 `odp-import-dataset`、`odp-transform`、`odp-validate`、`odp-val`、`odp-train`、`odp-reset`、`odp-plot-training`。
+- 项目重置：桌面端支持 `dry-run`、`--backup`、`--yes`、`--force` 开关；默认 dry-run，避免误删运行产物。
+- 训练曲线生成：桌面端可选择 `results.csv`，调用 `odp-plot-training` 生成训练曲线 PNG 和 summary JSON。
 
-## 输入源
-
-- 图片：点击“图片/视频”选择 `.jpg`、`.png`、`.bmp`、`.webp` 等文件。
-- 视频：点击“图片/视频”选择 `.mp4`、`.avi`、`.mkv`、`.mov` 等文件。
-- 图片目录：点击“文件夹”选择包含图片的目录。
-- 摄像头：点击“摄像头 0”，或手动输入其他摄像头编号。
+训练任务默认 dry-run，避免在桌面端误触发长时间训练。
 
 ## 技术边界
 
-- UI 层使用 PySide6 / Qt signal / worker thread。
-- 推理只调用 `od_platform.inference.infer_yolo()` 以及 hook/sink 接口。
-- 帧输入只调用 `od_platform.frame_source`。
-- 绘制只复用 `od_platform.visualization`。
-- platform 后端不得 import PySide6、PyQt、FastAPI、Celery 等前端或调度框架。
+- UI 使用 PySide6、Qt signal、worker thread。
+- 推理调用 `od_platform.inference.infer_yolo()`、`InferHooks`、`OutputSink`。
+- 帧输入调用 `od_platform.frame_source`。
+- 绘制调用 `od_platform.visualization`。
+- 任务启动调用 CLI module 子进程。
+- platform 包不得 import PySide6、PyQt、FastAPI、Celery 等 UI 或调度框架。
 
-## 后续开发
+## 后续可做
 
-1. 增加本地产物删除的安全入口。
-2. 增加任务参数分组、模板保存和运行历史复用。
-3. 增加训练曲线多 run 对比视图。
+- 任务模板保存和运行历史复用。
+- 多 run 训练曲线对比。
+- exe 打包，暂不属于当前阶段。
 
-## 验收标准
+## 验证
 
-- 桌面端能使用同一份 steel best 权重完成图片、图片目录、视频或摄像头推理。
-- 关闭窗口或点击停止后能释放摄像头资源。
-- UI 代码不 import Ultralytics 训练逻辑，不复制 platform 的业务代码。
+```powershell
+conda activate odplat
+python -m compileall apps/desktop
+python -m pytest apps/platform/src/od_platform/tests/test_desktop_task_worker.py -q
+python apps/desktop/main.py
+```
