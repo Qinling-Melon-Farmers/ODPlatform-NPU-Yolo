@@ -35,9 +35,7 @@ class YOLOValConfig(BaseRuntimeConfig):
     @field_validator("task")
     @classmethod
     def _validate_task(cls, value: str) -> str:
-        if value not in Task.all():
-            raise ValueError(f"unsupported task {value!r}, expected one of {Task.all()}")
-        return value
+        return Task.ensure_end_to_end(value)
 
     @field_validator("split")
     @classmethod
@@ -49,8 +47,8 @@ class YOLOValConfig(BaseRuntimeConfig):
 
     @model_validator(mode="after")
     def _validate_task_specific_fields(self) -> YOLOValConfig:
-        if self.task != Task.SEGMENT and (self.mask_ratio != 4 or not self.overlap_mask):
-            raise ValueError("mask_ratio and overlap_mask are only configurable for segment task")
+        if self.mask_ratio != 4 or not self.overlap_mask:
+            raise ValueError("mask_ratio and overlap_mask are reserved for future segment support")
         return self
 
     def to_ultralytics_kwargs(self) -> dict[str, Any]:

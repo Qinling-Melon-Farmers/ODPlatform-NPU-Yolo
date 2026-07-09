@@ -8,6 +8,8 @@ import sys
 from pathlib import Path
 
 from od_platform.common import paths
+from od_platform.common.constants import Task
+from od_platform.common.environment import warn_cli_if_not_expected_environment
 from od_platform.common.logging_utils import get_logger
 from od_platform.inference.service import infer_yolo, run_inference
 from od_platform.runtime_config.infer import YOLOInferConfig
@@ -22,12 +24,13 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--pipeline-yaml", help="Frame-source and visualization config yaml.")
     parser.add_argument("--model", help="Override model path or model name.")
     parser.add_argument("--source", help="Override inference source: image, directory, video, URL or camera index.")
-    parser.add_argument("--task", choices=("detect", "segment"), help="Override task.")
+    parser.add_argument("--task", choices=Task.end_to_end(), help="Override task. Segment is reserved for future work.")
     parser.add_argument("--imgsz", type=int, help="Override image size.")
     parser.add_argument("--device", help="Override inference device, such as 0 or cpu.")
     parser.add_argument("--conf", type=float, help="Override confidence threshold.")
     parser.add_argument("--iou", type=float, help="Override NMS IoU threshold.")
     parser.add_argument("--max-det", dest="max_det", type=int, help="Override max detections per image.")
+    parser.add_argument("--vid-stride", dest="vid_stride", type=int, help="Process every Nth video frame.")
     parser.add_argument("--classes", help="Comma-separated class ids, such as 0,2,5.")
     parser.add_argument("--project", help="Override Ultralytics project directory.")
     parser.add_argument("--name", help="Override Ultralytics run name.")
@@ -79,6 +82,7 @@ def _apply_cli_overrides(config: YOLOInferConfig, args: argparse.Namespace) -> Y
             "conf",
             "iou",
             "max_det",
+            "vid_stride",
             "project",
             "name",
         }
@@ -104,6 +108,7 @@ def _pipeline_cli_args(args: argparse.Namespace) -> dict[str, object]:
         "conf",
         "iou",
         "max_det",
+        "vid_stride",
         "project",
         "name",
     }
@@ -121,6 +126,7 @@ def _pipeline_cli_args(args: argparse.Namespace) -> dict[str, object]:
 def main(argv: list[str] | None = None) -> int:
     parser = build_parser()
     args = parser.parse_args(argv)
+    warn_cli_if_not_expected_environment()
     try:
         if args.dry_run:
             base_config, config_path = _load_base_config(args.config)

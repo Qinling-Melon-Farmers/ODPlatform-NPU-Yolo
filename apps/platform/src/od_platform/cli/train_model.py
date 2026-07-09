@@ -6,6 +6,7 @@ import argparse
 import sys
 from pathlib import Path
 
+from od_platform.common.environment import warn_cli_if_not_expected_environment
 from od_platform.runtime_config.loaders import load_train_config, resolve_runtime_config
 from od_platform.runtime_config.train import YOLOTrainConfig
 from od_platform.training.service import run_training
@@ -64,6 +65,7 @@ def _apply_cli_overrides(config: YOLOTrainConfig, args: argparse.Namespace) -> Y
 def main(argv: list[str] | None = None) -> int:
     parser = build_parser()
     args = parser.parse_args(argv)
+    warn_cli_if_not_expected_environment()
     config_path: Path = resolve_runtime_config(args.config)
     try:
         config = _apply_cli_overrides(load_train_config(config_path), args)

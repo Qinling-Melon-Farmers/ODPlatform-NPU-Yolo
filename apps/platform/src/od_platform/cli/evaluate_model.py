@@ -7,6 +7,7 @@ import logging
 import sys
 
 from od_platform.common import paths
+from od_platform.common.environment import warn_cli_if_not_expected_environment
 from od_platform.common.logging_utils import get_logger
 from od_platform.evaluation import evaluate_yolo
 
@@ -77,6 +78,7 @@ def main(argv: list[str] | None = None) -> int:
         log_level=getattr(logging, args.log_level),
         temp_log=False,
     )
+    warn_cli_if_not_expected_environment(logger=logging.getLogger("od_platform"))
     try:
         result = evaluate_yolo(
             config_path=args.config,

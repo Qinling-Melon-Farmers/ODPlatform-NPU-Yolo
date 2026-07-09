@@ -1,0 +1,25 @@
+# ODPlatform quick-start dependencies.
+#
+# Generated from pipreqs import scan plus apps/platform/pyproject.toml and
+# apps/desktop/requirements.txt. The platform package metadata remains the
+# authoritative dependency declaration for packaging.
+
+colorlog>=6.10.1
+matplotlib>=3.8.0
+matplotx>=0.3.10
+numpy>=1.26.0
+opencv-python>=4.8.0
+openpyxl>=3.1.0
+pillow>=10.0.0
+pydantic>=2.0.0
+psutil>=7.2.2
+PySide6>=6.7
+pyyaml>=6.0.0
+torch>=2.1.1
+ultralytics>=8.4.82
+
+# Development and verification
+mypy>=1.5.0
+pytest>=7.4.0
+pytest-cov>=4.1.0
+ruff>=0.1.0

@@ -8,6 +8,7 @@ import sys
 from pathlib import Path
 
 from od_platform.common.constants import Task
+from od_platform.common.environment import warn_cli_if_not_expected_environment
 from od_platform.common.logging_utils import get_logger
 from od_platform.common.paths import LOGGING_DIR, dataset_yaml_path
 from od_platform.data_validation.render import render_to_logger
@@ -27,7 +28,7 @@ def build_parser() -> argparse.ArgumentParser:
     target = parser.add_mutually_exclusive_group(required=True)
     target.add_argument("--dataset", help="数据集配置名称，解析为 configs/datasets/<name>.yaml")
     target.add_argument("--yaml", type=Path, help="dataset.yaml 路径")
-    parser.add_argument("--task", default=Task.DETECT, choices=Task.all())
+    parser.add_argument("--task", default=Task.DETECT, choices=Task.end_to_end())
     parser.add_argument("--no-report", action="store_true", help="只输出日志，不写 JSON 报告")
     parser.add_argument("--verbose", "-v", action="store_true", help="输出 DEBUG 日志")
     parser.add_argument("--executor", "-e", help="执行人姓名，记录到报告审计字段")
@@ -45,8 +46,10 @@ def main(argv: list[str] | None = None) -> int:
         temp_log=False,
         logger_name="od_platform.validate_data",
     )
+    warn_cli_if_not_expected_environment(logger=logger)
 
     try:
+        Task.ensure_end_to_end(args.task)
         if args.dataset:
             yaml_path = dataset_yaml_path(args.dataset)
         else:

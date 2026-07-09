@@ -7,6 +7,7 @@ import logging
 import sys
 
 from od_platform.common.constants import AnnotationFormat, SplitStrategy, Task
+from od_platform.common.environment import warn_cli_if_not_expected_environment
 from od_platform.common.logging_utils import get_logger
 from od_platform.common.paths import LOGGING_DIR
 from od_platform.data_pipeline.orchestrator import DatasetPipeline
@@ -23,7 +24,7 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument("--dataset", required=True, help="数据集名称或路径")
     parser.add_argument("--format", required=True, choices=AnnotationFormat.all(), dest="annotation_format")
-    parser.add_argument("--task", default=Task.DETECT, choices=Task.all())
+    parser.add_argument("--task", default=Task.DETECT, choices=Task.end_to_end())
     parser.add_argument("--split-strategy", default=SplitStrategy.RANDOM, choices=SplitStrategy.all())
     parser.add_argument("--classes", nargs="+", default=None, help="类别白名单/类别顺序")
     parser.add_argument("--train-rate", type=float, default=0.8)
@@ -42,8 +43,10 @@ def main(argv: list[str] | None = None) -> int:
         temp_log=False,
         logger_name="od_platform.transform_data",
     )
+    warn_cli_if_not_expected_environment(logger=logger)
 
     try:
+        Task.ensure_end_to_end(args.task)
         result = DatasetPipeline(
             args.dataset,
             args.annotation_format,

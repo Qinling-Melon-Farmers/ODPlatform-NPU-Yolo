@@ -47,12 +47,12 @@ class DatasetPipeline:
             raise ValueError("YOLO 源数据需要显式提供 --classes，避免 yaml 与 txt class id 不一致")
 
         self.annotation_format = annotation_format
-        self.task = task
+        self.task = Task.ensure_end_to_end(task)
         self.train_rate = train_rate
         self.val_rate = val_rate
         self.random_state = random_state
         self.split_strategy = split_strategy
-        self.options = ConvertOptions(task=task, classes=classes)
+        self.options = ConvertOptions(task=self.task, classes=classes)
 
         self.raw_root = resolve_dataset(dataset)
         self.dataset_name = self.raw_root.name

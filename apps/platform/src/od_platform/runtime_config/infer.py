@@ -48,9 +48,7 @@ class YOLOInferConfig(BaseRuntimeConfig):
     @field_validator("task")
     @classmethod
     def _validate_task(cls, value: str) -> str:
-        if value not in Task.all():
-            raise ValueError(f"unsupported task {value!r}, expected one of {Task.all()}")
-        return value
+        return Task.ensure_end_to_end(value)
 
     @field_validator("source")
     @classmethod
@@ -65,8 +63,8 @@ class YOLOInferConfig(BaseRuntimeConfig):
             raise ValueError("save_conf=True requires save_txt=True")
         if self.stream_buffer and not self.stream:
             raise ValueError("stream_buffer=True requires stream=True")
-        if self.retina_masks and self.task != Task.SEGMENT:
-            raise ValueError("retina_masks=True is only valid for segment task")
+        if self.retina_masks:
+            raise ValueError("retina_masks=True is reserved for future segment support")
         return self
 
     def to_ultralytics_kwargs(self) -> dict[str, Any]:

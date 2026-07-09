@@ -6,6 +6,7 @@ import argparse
 import sys
 from pathlib import Path
 
+from od_platform.common.environment import warn_cli_if_not_expected_environment
 from od_platform.data_pipeline.importer import import_voc_zip
 
 
@@ -21,6 +22,7 @@ def build_parser() -> argparse.ArgumentParser:
 def main(argv: list[str] | None = None) -> int:
     parser = build_parser()
     args = parser.parse_args(argv)
+    warn_cli_if_not_expected_environment()
     try:
         import_voc_zip(args.zip_path, dataset_name=args.name, overwrite=args.overwrite)
         return 0

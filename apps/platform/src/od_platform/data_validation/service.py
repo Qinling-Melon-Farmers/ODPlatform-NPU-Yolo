@@ -9,6 +9,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from od_platform.common import paths
+from od_platform.common.constants import Task
 from od_platform.common.performance_utils import time_it
 from od_platform.common.system_utils import log_device_info
 from od_platform.data_validation.export import write_rework_csv
@@ -46,6 +47,7 @@ def validate_dataset(
         run_id:       手动指定运行 ID; None 表示自动用时间戳
         executor:     执行人姓名, 记录到报告审计字段
     """
+    task_type = Task.ensure_end_to_end(task_type)
     resolved_run_id = run_id or datetime.now().strftime("%Y%m%d_%H%M%S")
     run_dir = paths.validation_run_dir(resolved_run_id) if write_report else None
 

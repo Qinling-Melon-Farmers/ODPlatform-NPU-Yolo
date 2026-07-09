@@ -30,6 +30,21 @@ class Task:
     def all(cls) -> tuple[str, ...]:
         return cls.DETECT, cls.SEGMENT
 
+    @classmethod
+    def end_to_end(cls) -> tuple[str, ...]:
+        """Task types supported by the current full ODPlatform workflow."""
+        return (cls.DETECT,)
+
+    @classmethod
+    def ensure_end_to_end(cls, value: str) -> str:
+        """Validate a task against the current end-to-end product boundary."""
+        if value not in cls.end_to_end():
+            raise ValueError(
+                f"task {value!r} is not supported end-to-end yet; "
+                f"supported tasks: {cls.end_to_end()}. Segment is reserved for future work."
+            )
+        return value
+
 
 class SplitStrategy:
     """train/val/test split strategy names."""

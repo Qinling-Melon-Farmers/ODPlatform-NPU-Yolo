@@ -6,6 +6,7 @@ import argparse
 import sys
 from pathlib import Path
 
+from od_platform.common.environment import warn_cli_if_not_expected_environment
 from od_platform.training.metrics import write_metrics_summary
 from od_platform.training.plots import plot_training_results
 
@@ -22,6 +23,7 @@ def build_parser() -> argparse.ArgumentParser:
 def main(argv: list[str] | None = None) -> int:
     parser = build_parser()
     args = parser.parse_args(argv)
+    warn_cli_if_not_expected_environment()
     try:
         plot_training_results(args.csv_path, args.output, use_matplotx=args.matplotx)
         if args.summary:

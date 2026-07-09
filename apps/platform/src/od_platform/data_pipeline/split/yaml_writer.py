@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import logging
 from pathlib import Path
 
@@ -19,6 +20,51 @@ def _scalar(value: object) -> str:
     if not text or any(char in text for char in ["#", "[", "]", "{", "}"]) or ": " in text:
         return repr(text)
     return text
+
+
+def _file_digest(path: Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as file:
+        for chunk in iter(lambda: file.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
+def _manifest_fingerprint(manifest: SplitManifest, classes: list[str]) -> dict[str, object]:
+    digest = hashlib.sha256()
+    split_counts: dict[str, int] = {}
+    for class_name in classes:
+        digest.update(b"class:")
+        digest.update(class_name.encode("utf-8"))
+        digest.update(b"\n")
+
+    for split_name, pairs in (
+        ("train", manifest.train),
+        ("val", manifest.val),
+        ("test", manifest.test),
+    ):
+        split_counts[split_name] = len(pairs)
+        for image_path, label_path in sorted(pairs, key=lambda pair: (pair[0].name, pair[1].name)):
+            digest.update(split_name.encode("utf-8"))
+            digest.update(b"|")
+            digest.update(image_path.name.encode("utf-8"))
+            digest.update(b"|")
+            digest.update(label_path.name.encode("utf-8"))
+            digest.update(b"|")
+            if image_path.exists():
+                digest.update(_file_digest(image_path).encode("ascii"))
+            digest.update(b"|")
+            if label_path.exists():
+                digest.update(_file_digest(label_path).encode("ascii"))
+            digest.update(b"\n")
+
+    return {
+        "algorithm": "sha256",
+        "value": digest.hexdigest(),
+        "sample_count": sum(split_counts.values()),
+        "class_count": len(classes),
+        "split_counts": split_counts,
+    }
 
 
 def write_dataset_yaml(
@@ -67,6 +113,7 @@ def write_dataset_yaml(
         )
         if manifest is not None:
             counts = manifest.summary()
+            fingerprint = _manifest_fingerprint(manifest, classes)
             lines.extend(
                 [
                     "  split:",
@@ -81,6 +128,15 @@ def write_dataset_yaml(
                     f"      val: {counts['val']}",
                     f"      test: {counts['test']}",
                     f"      total: {counts['total']}",
+                    "  fingerprint:",
+                    f"    algorithm: {_scalar(fingerprint['algorithm'])}",
+                    f"    value: {_scalar(fingerprint['value'])}",
+                    f"    sample_count: {fingerprint['sample_count']}",
+                    f"    class_count: {fingerprint['class_count']}",
+                    "    split_counts:",
+                    f"      train: {fingerprint['split_counts']['train']}",
+                    f"      val: {fingerprint['split_counts']['val']}",
+                    f"      test: {fingerprint['split_counts']['test']}",
                 ]
             )
 

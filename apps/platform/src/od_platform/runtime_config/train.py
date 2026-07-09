@@ -35,9 +35,7 @@ class YOLOTrainConfig(BaseRuntimeConfig):
     @field_validator("task")
     @classmethod
     def _validate_task(cls, value: str) -> str:
-        if value not in Task.all():
-            raise ValueError(f"unsupported task {value!r}, expected one of {Task.all()}")
-        return value
+        return Task.ensure_end_to_end(value)
 
     def to_ultralytics_kwargs(self) -> dict[str, Any]:
         kwargs = super().to_ultralytics_kwargs()

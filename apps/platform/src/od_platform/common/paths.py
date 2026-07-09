@@ -31,6 +31,7 @@ MODELS_DIR: Path = ROOT_DIR / "models"
 RUNS_DIR: Path = ROOT_DIR / "runs"
 VALIDATION_RUNS_DIR: Path = RUNS_DIR / "data_validation"
 INFERENCE_RUNS_DIR: Path = RUNS_DIR / "inference"
+RESET_BACKUP_DIR: Path = RUNS_DIR / "reset_backup"
 
 PRETRAINED_MODELS_DIR: Path = MODELS_DIR / "pretrained"
 TRAINED_MODELS_DIR: Path = MODELS_DIR / "trained"
@@ -75,6 +76,7 @@ def get_dirs_to_initialize() -> list[Path]:
         MODELS_DIR,
         RUNS_DIR,
         INFERENCE_RUNS_DIR,
+        RESET_BACKUP_DIR,
         PRETRAINED_MODELS_DIR,
         TRAINED_MODELS_DIR,
         RAW_DATA_DIR,

@@ -1,6 +1,7 @@
 import logging
 from pathlib import Path
 
+from od_platform.common.environment import warn_cli_if_not_expected_environment
 from od_platform.common.logging_utils import get_logger
 from od_platform.common.paths import LOGGING_DIR, RAW_DATA_DIR, ROOT_DIR, get_dirs_to_initialize
 from od_platform.common.performance_utils import time_it
@@ -36,6 +37,7 @@ def _check_raw_data_status() -> None:
 def initialize_project() -> None:
     """初始化 ODPlatform 项目运行时目录。"""
     get_logger(base_path=LOGGING_DIR, log_type="init_project")
+    warn_cli_if_not_expected_environment(logger=logger)
 
     line_width = 60
     logger.info("开始初始化项目核心目录".center(line_width, "="))

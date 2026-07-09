@@ -13,7 +13,9 @@ import shutil
 import stat
 import sys
 from dataclasses import dataclass
+from datetime import datetime
 from pathlib import Path
+from zipfile import ZIP_DEFLATED, ZipFile
 
 from od_platform.common import paths
 from od_platform.common.audit_utils import (
@@ -21,6 +23,7 @@ from od_platform.common.audit_utils import (
     append_audit_result,
     write_audit_record,
 )
+from od_platform.common.environment import warn_cli_if_not_expected_environment
 from od_platform.common.logging_utils import get_logger
 from od_platform.common.performance_utils import time_it
 from od_platform.common.string_utils import format_table_row, format_table_separator
@@ -70,6 +73,14 @@ def _is_preserved_placeholder(root: Path, child: Path) -> bool:
     return child.parent == root and child.name in PRESERVED_PLACEHOLDERS
 
 
+def _is_reset_backup_path(path: Path) -> bool:
+    try:
+        path.resolve().relative_to(paths.RESET_BACKUP_DIR.resolve())
+    except ValueError:
+        return False
+    return True
+
+
 @time_it(iterations=1, name="reset 目录扫描", logger_instance=logger)
 def _scan_dir(path: Path) -> ScanResult:
     """扫描目录中将被清理的文件数量与字节数。
@@ -93,6 +104,8 @@ def _scan_dir(path: Path) -> ScanResult:
                 for entry in entries:
                     entry_path = Path(entry.path)
                     if _is_preserved_placeholder(path, entry_path):
+                        continue
+                    if _is_reset_backup_path(entry_path):
                         continue
                     try:
                         if entry.is_dir(follow_symlinks=False):
@@ -158,6 +171,7 @@ def _print_plan(results: list[ScanResult], dry_run_mode: bool) -> None:
     logger.info(format_table_separator(widths))
     logger.info(format_table_row(["合计", total_files, _format_size(total_bytes), "-"], widths, aligns))
     logger.info("不会触碰: data/raw/、models/pretrained/、apps/、docs/、scripts/、.git/")
+    logger.info("备份目录保留: %s", _format_relative(paths.RESET_BACKUP_DIR))
 
 
 def _confirm(total_targets: int) -> bool:
@@ -212,6 +226,8 @@ def _clear_directory_contents(root: Path) -> None:
     for child in root.iterdir():
         if _is_preserved_placeholder(root, child):
             continue
+        if _is_reset_backup_path(child):
+            continue
         if child.is_dir() and not child.is_symlink():
             shutil.rmtree(child, onerror=_on_rm_error)
         else:
@@ -251,6 +267,38 @@ def _execute_deletion(results: list[ScanResult]) -> list[DeleteFailure]:
     return failures
 
 
+def _backup_targets(results: list[ScanResult]) -> Path | None:
+    """Zip reset targets before deletion and return the archive path."""
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    backup_dir = paths.RESET_BACKUP_DIR / timestamp
+    backup_dir.mkdir(parents=True, exist_ok=True)
+    archive_path = backup_dir / "reset-runtime.zip"
+    written = 0
+
+    with ZipFile(archive_path, "w", compression=ZIP_DEFLATED) as archive:
+        for result in results:
+            if not result.path.exists():
+                continue
+            for child in result.path.rglob("*"):
+                if _is_preserved_placeholder(result.path, child) or _is_reset_backup_path(child):
+                    continue
+                if not child.is_file():
+                    continue
+                try:
+                    archive.write(child, child.relative_to(paths.ROOT_DIR))
+                    written += 1
+                except OSError as exc:
+                    logger.warning("备份跳过异常文件 %s: %s", child, exc)
+
+    if written == 0:
+        archive_path.unlink(missing_ok=True)
+        logger.info("未发现需要备份的运行产物，跳过备份")
+        return None
+
+    logger.info("已备份 %d 个文件到: %s", written, archive_path)
+    return archive_path
+
+
 def _print_summary(results: list[ScanResult], failures: list[DeleteFailure]) -> int:
     """输出执行汇总并计算退出码。
 
@@ -286,10 +334,16 @@ def _build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--yes", action="store_true", help="真正执行删除；默认只 dry-run。")
     parser.add_argument("--force", action="store_true", help="跳过确认；仅与 --yes 同时使用时生效。")
     parser.add_argument("--dry-run", action="store_true", help="显式 dry-run；优先级高于 --yes。")
+    parser.add_argument("--backup", action="store_true", help="删除前备份运行产物到 runs/reset_backup/<timestamp>/。")
     return parser
 
 
-def reset_project(yes: bool = False, force: bool = False, dry_run: bool = False) -> int:
+def reset_project(
+    yes: bool = False,
+    force: bool = False,
+    dry_run: bool = False,
+    backup: bool = False,
+) -> int:
     """重置 ODPlatform 运行时目录。
 
     Args:
@@ -305,10 +359,11 @@ def reset_project(yes: bool = False, force: bool = False, dry_run: bool = False)
         log_type="reset_project",
         logger_name="od_platform.cli.reset_project",
     )
+    warn_cli_if_not_expected_environment(logger=logger)
     audit_dir = paths.META_LOGGING_DIR / "reset_project"
     context = _audit_context(
         root_dir=paths.ROOT_DIR,
-        argv=[f"yes={yes}", f"force={force}", f"dry_run={dry_run}"],
+        argv=[f"yes={yes}", f"force={force}", f"dry_run={dry_run}", f"backup={backup}"],
     )
     audit_file = write_audit_record(audit_dir, context)
     logger.info("[AUDIT] %s", audit_file)
@@ -326,6 +381,8 @@ def reset_project(yes: bool = False, force: bool = False, dry_run: bool = False)
     _print_plan(results, dry_run_mode=dry_run_mode)
 
     if dry_run_mode:
+        if backup:
+            logger.info("dry-run 模式不会创建备份；真正备份需使用 --yes --backup")
         logger.info("💡 这是 dry-run（默认行为）。要真正执行删除，请加 --yes:")
         logger.info("   odp-reset --yes")
         append_audit_result(audit_file, {"exit_code": 0, "mode": "dry_run"})
@@ -335,6 +392,7 @@ def reset_project(yes: bool = False, force: bool = False, dry_run: bool = False)
         append_audit_result(audit_file, {"exit_code": 0, "mode": "cancelled"})
         return 0
 
+    backup_path = _backup_targets(results) if backup else None
     failures = _execute_deletion(results)
     exit_code = _print_summary(results, failures)
     append_audit_result(
@@ -342,6 +400,7 @@ def reset_project(yes: bool = False, force: bool = False, dry_run: bool = False)
         {
             "exit_code": exit_code,
             "mode": "delete",
+            "backup": str(backup_path) if backup_path is not None else None,
             "failed": [_format_relative(item.path) for item in failures],
         },
     )
@@ -360,7 +419,7 @@ def main(argv: list[str] | None = None) -> int:
     parser = _build_parser()
     args = parser.parse_args(argv)
     try:
-        return reset_project(yes=args.yes, force=args.force, dry_run=args.dry_run)
+        return reset_project(yes=args.yes, force=args.force, dry_run=args.dry_run, backup=args.backup)
     except Exception:
         logger.exception("reset_project 发生未捕获异常")
         return 1
