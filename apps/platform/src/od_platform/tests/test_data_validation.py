@@ -5,6 +5,7 @@ from pathlib import Path
 from unittest.mock import patch
 
 from od_platform.cli.validate_data import main as validate_main
+from od_platform.data_validation.checks.yaml_schema import validate_yaml_schema
 from od_platform.data_validation.registry import (
     CheckContext,
     CheckEntry,
@@ -14,6 +15,7 @@ from od_platform.data_validation.registry import (
     list_check_names,
 )
 from od_platform.data_validation.service import run_all_checks, validate_dataset
+from od_platform.data_validation.snapshot import DatasetSnapshot
 from od_platform.validate_dateset.registry import CheckContext as CompatCheckContext
 from od_platform.validate_dateset.registry import list_check_names as compat_list_check_names
 from od_platform.validate_dateset.service import run_all_checks as compat_run_all_checks
@@ -277,6 +279,47 @@ class TestDataValidation(unittest.TestCase):
         entries = get_all_checks()
 
         self.assertEqual(len(entries), len({entry.name for entry in entries}))
+
+    def test_yaml_schema_reports_nc_names_mismatch(self) -> None:
+        result = self._run_yaml_schema({"nc": 2, "names": ["ship"]})
+
+        self.assertEqual(result.severity, CheckSeverity.ERROR)
+        self.assertIn("nc 和 names 长度不一致", result.details["problems"][0])
+
+    def test_yaml_schema_reports_empty_names(self) -> None:
+        result = self._run_yaml_schema({"nc": 1, "names": []})
+
+        self.assertEqual(result.severity, CheckSeverity.ERROR)
+        self.assertIn("names 缺失或为空列表", result.details["problems"])
+
+    def test_yaml_schema_reports_duplicate_names(self) -> None:
+        result = self._run_yaml_schema({"nc": 2, "names": ["ship", "ship"]})
+
+        self.assertEqual(result.severity, CheckSeverity.ERROR)
+        self.assertTrue(any("重复类别名" in problem for problem in result.details["problems"]))
+
+    def test_yaml_schema_reports_illegal_names_type(self) -> None:
+        result = self._run_yaml_schema({"nc": 1, "names": "ship"})
+
+        self.assertEqual(result.severity, CheckSeverity.ERROR)
+        self.assertTrue(any("不是合法的列表/字典" in problem for problem in result.details["problems"]))
+
+    def _run_yaml_schema(self, yaml_data: dict[str, object]) -> CheckResult:
+        snapshot = DatasetSnapshot(
+            yaml_path=Path("dataset.yaml"),
+            yaml_data=yaml_data,
+            yaml_load_error=None,
+            data_root=Path("."),
+            nc=yaml_data.get("nc") if isinstance(yaml_data.get("nc"), int) else None,
+            class_names=(),
+            task_type="detect",
+            images_per_split={},
+            labels_per_split={},
+            label_files_per_split={},
+            stats_per_split={},
+        )
+        ctx = CheckContext(yaml_path=Path("dataset.yaml"), snapshot=snapshot)
+        return validate_yaml_schema(ctx)
 
 
 if __name__ == "__main__":

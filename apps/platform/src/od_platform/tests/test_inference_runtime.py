@@ -176,6 +176,29 @@ visualization:
         self.assertEqual(config.normalized_style_overrides()["line_width"], 3)
         self.assertEqual(config.normalized_style_overrides()["text_color"], (255, 255, 255))
 
+    def test_pipeline_config_rejects_invalid_color_mapping(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            path = Path(temp_dir) / "infer_pipeline.yaml"
+            path.write_text(
+                """
+visualization:
+  color_mapping:
+    scratch: [0, 300, 255]
+""",
+                encoding="utf-8",
+            )
+
+            with self.assertRaises(ValueError):
+                load_pipeline_config(path)
+
+    def test_pipeline_config_missing_file_uses_defaults(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            config = load_pipeline_config(Path(temp_dir) / "missing.yaml")
+
+        self.assertTrue(config.viz_enabled)
+        self.assertTrue(config.use_label_mapping)
+        self.assertEqual(config.default_color, (0, 255, 0))
+
     def test_infer_cli_pipeline_writes_audit_with_fake_yolo(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             root = Path(temp_dir)
@@ -310,6 +333,8 @@ visualization:
                     return [FakeResult()]
 
             class FakeFrameSource:
+                captured_strides: list[int] = []
+
                 def __init__(
                     self,
                     source,
@@ -320,6 +345,7 @@ visualization:
                 ):
                     self.source = source
                     self.stride = stride
+                    FakeFrameSource.captured_strides.append(stride)
                     self._done = False
 
                 def __enter__(self):
@@ -383,6 +409,103 @@ visualization:
             self.assertEqual(payload["stats"]["source_mode"], "threaded")
             self.assertEqual(payload["stats"]["source_buffer"], "bounded")
             self.assertEqual(payload["stats"]["pipeline_stages"], ["read", "infer", "render", "output"])
+            self.assertEqual(FakeFrameSource.captured_strides, [1])
+
+    def test_infer_cli_threaded_video_passes_stride_to_frame_source(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            model_path = root / "best.pt"
+            source_path = root / "demo.mp4"
+            model_path.write_bytes(b"model")
+            source_path.write_bytes(b"video")
+
+            class FakeBoxes:
+                data = np.empty((0, 6), dtype=float)
+
+            class FakeResult:
+                boxes = FakeBoxes()
+                names = {}
+                speed = {"preprocess": 1.0, "inference": 2.0, "postprocess": 3.0}
+
+                def plot(self):
+                    return np.zeros((20, 30, 3), dtype=np.uint8)
+
+            class FakeYOLO:
+                names = {}
+
+                def __init__(self, model: str) -> None:
+                    self.model = model
+
+                def __call__(self, image, **kwargs):
+                    return [FakeResult()]
+
+            class FakeFrameSource:
+                captured_strides: list[int] = []
+
+                def __init__(self, source, camera_config=None, *, stride=1, **_options):
+                    FakeFrameSource.captured_strides.append(stride)
+                    self._done = False
+
+                def __enter__(self):
+                    return self
+
+                def __exit__(self, exc_type, exc_value, exc_tb):
+                    return False
+
+                def __iter__(self):
+                    return self
+
+                def __next__(self):
+                    if self._done:
+                        raise StopIteration
+                    self._done = True
+                    from od_platform.frame_source import Frame, FrameInfo
+
+                    return Frame(
+                        image=np.zeros((20, 30, 3), dtype=np.uint8),
+                        info=FrameInfo(
+                            width=30,
+                            height=20,
+                            source_type=SourceType.VIDEO,
+                            source_path=str(source_path),
+                            frame_index=0,
+                            filename="demo.mp4",
+                            fps=30.0,
+                            total_frames=1,
+                        ),
+                    )
+
+                def get_source_type(self):
+                    return SourceType.VIDEO
+
+            fake_ultralytics = types.SimpleNamespace(YOLO=FakeYOLO, __version__="test")
+            with (
+                self._patch_inference_paths(root),
+                patch.dict(sys.modules, {"ultralytics": fake_ultralytics}),
+                patch("od_platform.inference.pipeline.create_frame_source", FakeFrameSource),
+            ):
+                try:
+                    code = infer_main(
+                        [
+                            "--model",
+                            str(model_path),
+                            "--source",
+                            str(source_path),
+                            "--name",
+                            "stride-video",
+                            "--max-frames",
+                            "1",
+                            "--no-save",
+                            "--threaded",
+                            "--vid-stride",
+                            "3",
+                        ]
+                    )
+                finally:
+                    self._close_project_logger()
+
+            self.assertEqual(code, 0)
+            self.assertEqual(FakeFrameSource.captured_strides, [3])
 
 
 if __name__ == "__main__":

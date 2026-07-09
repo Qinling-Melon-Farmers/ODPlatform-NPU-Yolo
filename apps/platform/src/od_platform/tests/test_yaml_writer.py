@@ -75,6 +75,46 @@ class TestYamlWriter(unittest.TestCase):
             self.assertIn("source_format: pascal_voc", content)
             self.assertIn("strategy: random", content)
             self.assertIn("random_state: 42", content)
+            self.assertIn("fingerprint:", content)
+            self.assertIn("algorithm: sha256", content)
+            self.assertIn("sample_count: 0", content)
+
+    def test_write_dataset_yaml_fingerprint_changes_with_sample_content(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            dataset_root = root / "dataset"
+            img = root / "raw" / "images" / "a.jpg"
+            lbl = root / "labels" / "a.txt"
+            img.parent.mkdir(parents=True)
+            lbl.parent.mkdir(parents=True)
+            img.write_bytes(b"image-v1")
+            lbl.write_text("0 0.5 0.5 0.1 0.1\n", encoding="utf-8")
+            manifest = SplitManifest(train=[(img, lbl)], strategy=SplitStrategy.RANDOM)
+
+            first = write_dataset_yaml(
+                root / "first.yaml",
+                dataset_root=dataset_root,
+                classes=["ship"],
+                manifest=manifest,
+                dataset_name="demo",
+                source_format=AnnotationFormat.PASCAL_VOC,
+                task=Task.DETECT,
+            ).read_text(encoding="utf-8")
+
+            lbl.write_text("0 0.5 0.5 0.2 0.2\n", encoding="utf-8")
+            second = write_dataset_yaml(
+                root / "second.yaml",
+                dataset_root=dataset_root,
+                classes=["ship"],
+                manifest=manifest,
+                dataset_name="demo",
+                source_format=AnnotationFormat.PASCAL_VOC,
+                task=Task.DETECT,
+            ).read_text(encoding="utf-8")
+
+            self.assertIn("sample_count: 1", first)
+            self.assertIn("train: 1", first)
+            self.assertNotEqual(_extract_fingerprint(first), _extract_fingerprint(second))
 
     def test_yaml_rel_paths_returns_expected_keys(self) -> None:
         dirs = SplitOutputDirs.for_dataset_root(Path("/tmp/ds"))
@@ -84,6 +124,12 @@ class TestYamlWriter(unittest.TestCase):
         self.assertEqual(rel["train"], "train/images")
         self.assertEqual(rel["val"], "val/images")
         self.assertEqual(rel["test"], "test/images")
+
+def _extract_fingerprint(content: str) -> str:
+    for line in content.splitlines():
+        if line.strip().startswith("value:"):
+            return line.split(":", 1)[1].strip()
+    raise AssertionError("fingerprint value not found")
 
 
 if __name__ == "__main__":

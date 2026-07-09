@@ -29,6 +29,13 @@ class TestRuntimeConfig(unittest.TestCase):
         self.assertEqual(kwargs["data"], "steel")
         self.assertTrue(kwargs["rect"])
 
+    def test_runtime_configs_reject_segment_until_supported_end_to_end(self) -> None:
+        with self.assertRaises(ValueError):
+            YOLOTrainConfig(task="segment")
+
+        with self.assertRaises(ValueError):
+            YOLOValConfig(task="segment")
+
     def test_val_template_generator_and_loader(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             path = Path(temp_dir) / "val.yaml"

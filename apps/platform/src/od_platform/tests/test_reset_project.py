@@ -113,7 +113,32 @@ class TestResetProject(unittest.TestCase):
             exit_code = reset_cli.main(["--dry-run", "--yes"])
 
         self.assertEqual(exit_code, 0)
-        reset_project.assert_called_once_with(yes=True, force=False, dry_run=True)
+        reset_project.assert_called_once_with(yes=True, force=False, dry_run=True, backup=False)
+
+    def test_reset_project_backup_archives_runtime_before_cleanup(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            base = Path(temp_dir)
+            target = base / "runs"
+            target.mkdir()
+            runtime_file = target / "exp.txt"
+            runtime_file.write_text("runtime", encoding="utf-8")
+            meta_logging = base / "meta_logging"
+            reset_backup = base / "runs" / "reset_backup"
+
+            with (
+                patch.object(reset_cli.paths, "META_LOGGING_DIR", meta_logging),
+                patch.object(reset_cli.paths, "ROOT_DIR", base),
+                patch.object(reset_cli.paths, "RESET_BACKUP_DIR", reset_backup),
+                patch.object(reset_cli.paths, "get_dirs_to_reset", return_value=[target]),
+                patch.object(reset_cli.paths, "is_protected", return_value=False),
+            ):
+                exit_code = reset_cli.reset_project(yes=True, force=True, backup=True)
+                self._close_reset_logger()
+
+            self.assertEqual(exit_code, 0)
+            self.assertFalse(runtime_file.exists())
+            archives = list(reset_backup.glob("*/reset-runtime.zip"))
+            self.assertEqual(len(archives), 1)
 
 
 if __name__ == "__main__":
