@@ -1,5 +1,4 @@
 #!/usr/bin/env python
-# -*- coding:utf-8 -*-
 # @FileName  : convert_rsod.py
 # @Author    : ODPlatform team
 # @Project   : ODPlatform
@@ -21,13 +20,11 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 PLATFORM_SRC = REPO_ROOT / "apps" / "platform" / "src"
 sys.path.insert(0, str(PLATFORM_SRC))
 
-# —— 导入项目模块 ——————————————————————————————————————————
-from od_platform.common.constants import AnnotationFormat, Task
-from od_platform.data_pipeline.convert.registry import ConvertOptions, list_capabilities
-from od_platform.data_pipeline.convert.service import convert_data_to_yolo
-
-
 def main(convert: bool = False) -> None:
+    from od_platform.common.constants import AnnotationFormat, Task
+    from od_platform.data_pipeline.convert.registry import ConvertOptions, list_capabilities
+    from od_platform.data_pipeline.convert.service import convert_data_to_yolo
+
     # —— 数据集路径 —————————————————————————————————————————
     raw_dir = REPO_ROOT / "data" / "raw" / "rsod"
     xml_dir = raw_dir / "annotations"
@@ -45,7 +42,7 @@ def main(convert: bool = False) -> None:
         if images_dir.exists()
         else 0
     )
-    print(f"\n[数据集概览]")
+    print("\n[数据集概览]")
     print(f"   标注目录:   {xml_dir}")
     print(f"   图片目录:   {images_dir}")
     print(f"   XML 标注:   {xml_count} 个")
@@ -53,18 +50,18 @@ def main(convert: bool = False) -> None:
     print(f"   背景图:     {img_count - xml_count} 个 (无标注)")
 
     # —— 注册表状态 —————————————————————————————————————————
-    print(f"\n[已注册的转换器]")
+    print("\n[已注册的转换器]")
     caps = list_capabilities()
     for fmt, tasks in caps.items():
         enabled = "[V]" if Task.DETECT in tasks else "[!]"
         print(f"   {enabled} {fmt}: 支持 {', '.join(tasks)}")
 
     if not convert:
-        print(f"\n[提示] 这是 dry-run 模式。要执行转换请加 --convert")
+        print("\n[提示] 这是 dry-run 模式。要执行转换请加 --convert")
         return
 
     # —— 执行转换 ———————————————————————————————————————————
-    print(f"\n[开始转换]")
+    print("\n[开始转换]")
     print(f"   输入:  {xml_dir}")
     print(f"   输出:  {output_dir}")
 
@@ -78,14 +75,14 @@ def main(convert: bool = False) -> None:
 
     # —— 转换结果 ———————————————————————————————————————————
     txt_count = len(list(output_dir.glob("*.txt"))) if output_dir.exists() else 0
-    print(f"\n[转换完成]")
+    print("\n[转换完成]")
     print(f"   生成 YOLO 标签: {txt_count} 个")
     print(f"   检测到类别 ({len(classes)}): {', '.join(classes)}")
     print(f"   输出目录: {output_dir}")
 
     # —— 预览前 3 个标签文件 ————————————————————————————————
     if output_dir.exists():
-        print(f"\n[标签预览 (前 3 个)]")
+        print("\n[标签预览 (前 3 个)]")
         for i, txt_file in enumerate(sorted(output_dir.glob("*.txt"))[:3], 1):
             lines = txt_file.read_text().strip().split("\n")
             print(f"   [{i}] {txt_file.name}: {len(lines) if lines[0] else 0} 个目标")
