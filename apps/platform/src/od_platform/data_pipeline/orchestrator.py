@@ -6,6 +6,8 @@ import logging
 import tempfile
 from pathlib import Path
 
+import yaml
+
 from od_platform.common import paths
 from od_platform.common.constants import (
     COVERAGE_HARD_THRESHOLD,
@@ -43,16 +45,12 @@ class DatasetPipeline:
         random_state: int = DEFAULT_RANDOM_STATE,
         split_strategy: str = DEFAULT_SPLIT_STRATEGY,
     ) -> None:
-        if annotation_format == AnnotationFormat.YOLO and not classes:
-            raise ValueError("YOLO 源数据需要显式提供 --classes，避免 yaml 与 txt class id 不一致")
-
         self.annotation_format = annotation_format
         self.task = Task.ensure_end_to_end(task)
         self.train_rate = train_rate
         self.val_rate = val_rate
         self.random_state = random_state
         self.split_strategy = split_strategy
-        self.options = ConvertOptions(task=self.task, classes=classes)
 
         self.raw_root = resolve_dataset(dataset)
         self.dataset_name = self.raw_root.name
@@ -61,6 +59,10 @@ class DatasetPipeline:
         self.processed_root = paths.dataset_processed_dir(self.dataset_name)
         self.output_dirs = SplitOutputDirs.for_dataset_root(self.processed_root)
         self.yaml_out = paths.dataset_yaml_path(self.dataset_name)
+        resolved_classes = classes
+        if annotation_format == AnnotationFormat.YOLO and not resolved_classes:
+            resolved_classes = self._load_yolo_classes()
+        self.options = ConvertOptions(task=self.task, classes=resolved_classes)
 
     def run(self) -> dict[str, object]:
         """Run the full pipeline."""
@@ -171,3 +173,22 @@ class DatasetPipeline:
     def _list_images(images_dir: Path) -> list[Path]:
         suffixes = {suffix.lower() for suffix in IMAGE_EXTENSIONS}
         return sorted(path for path in images_dir.iterdir() if path.is_file() and path.suffix.lower() in suffixes)
+
+    def _load_yolo_classes(self) -> list[str]:
+        yaml_path = self.raw_root / "data.yaml"
+        if not yaml_path.exists():
+            raise ValueError("YOLO 源数据需要提供 --classes，或在 raw 数据集根目录放置 data.yaml")
+        payload = yaml.safe_load(yaml_path.read_text(encoding="utf-8")) or {}
+        names = payload.get("names")
+        if isinstance(names, list):
+            classes = [str(name) for name in names]
+        elif isinstance(names, dict):
+            classes = [str(name) for _index, name in sorted(names.items(), key=lambda item: int(item[0]))]
+        else:
+            raise ValueError(f"{yaml_path} 中 names 字段必须是列表或字典")
+        if not classes:
+            raise ValueError(f"{yaml_path} 中未定义任何类别")
+        nc = payload.get("nc")
+        if nc is not None and int(nc) != len(classes):
+            raise ValueError(f"{yaml_path} 中 nc={nc} 与 names 数量 {len(classes)} 不一致")
+        return classes

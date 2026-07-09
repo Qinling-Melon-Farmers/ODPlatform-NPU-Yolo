@@ -44,13 +44,25 @@ odp-infer --model models/trained/<best-dir>/best.pt --source 0 --show --conf 0.2
 
 `apps/platform/configs/runtime/infer_pipeline.yaml` 是本地 runtime 配置，默认包含 steel 六类中文标签映射：裂纹、夹杂、斑块、点蚀表面、轧制氧化皮、划痕。
 
+## YOLO 数据集流程：liftrace
+
+`liftrace.zip` 是 YOLO 格式数据集，结构包含 `data.yaml`、`images/<split>/` 和 `labels/<split>/`。导入时应使用 `--format yolo`，不要按 VOC 导入。
+
+```powershell
+odp-import-dataset "..\liftrace.zip" --name liftrace --format yolo --overwrite
+odp-transform --dataset liftrace --format yolo --task detect
+odp-validate --dataset liftrace --executor your-name
+```
+
+YOLO zip 导入会复制 `data.yaml`，并把 `images/*` 与 `labels/*` 展平成 `data/raw/<dataset>/images` 和 `data/raw/<dataset>/annotations`。转换时如果没有传 `--classes`，会优先从 raw 数据集根目录的 `data.yaml` 读取类别。
+
 ## CLI 一览
 
 | 命令 | 用途 |
 | --- | --- |
 | `odp-init` | 初始化运行目录 |
 | `odp-reset` | 清理运行产物，默认 dry-run；可加 `--backup` 先备份到 `runs/reset_backup/<timestamp>/` |
-| `odp-import-dataset` | 导入真实数据集 zip，当前支持 VOC zip |
+| `odp-import-dataset` | 导入真实数据集 zip，当前支持 VOC zip 和 YOLO zip |
 | `odp-transform` | 数据格式转换、划分、落盘、生成 YOLO dataset yaml，并写入 `odp_meta.fingerprint` |
 | `odp-validate` | 数据质检，输出 JSON、Markdown、HTML、CSV/Excel 返工清单 |
 | `odp-gen-config` | 生成 train / val / infer runtime 配置 |
@@ -94,7 +106,7 @@ python apps/desktop/main.py
 
 ## 参考资产说明
 
-根目录的 `inference.zip`、`visualization.zip`、`data_pipeline*.zip`、单个 `.py` 脚本和 HTML/Markdown 文档是带教参考资产，用于对照实现。`odp-import-dataset` 只用于导入真实数据集压缩包，例如 `steel surface defect.v1i.voc.zip`。
+根目录的 `inference.zip`、`visualization.zip`、`data_pipeline*.zip`、单个 `.py` 脚本和 HTML/Markdown 文档是带教参考资产，用于对照实现。`odp-import-dataset` 只用于导入真实数据集压缩包，例如 `steel surface defect.v1i.voc.zip`、`liftrace.zip`。
 
 ## 验证
 

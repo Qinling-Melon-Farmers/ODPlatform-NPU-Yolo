@@ -149,7 +149,9 @@ class MainWindow(QMainWindow):
 
         self.import_dataset_edit = QLineEdit("steel-surface-defect")
         self.import_zip_edit = QLineEdit("")
-        self.import_zip_edit.setPlaceholderText("VOC zip 路径")
+        self.import_zip_edit.setPlaceholderText("VOC/YOLO zip 路径")
+        self.import_format_combo = QComboBox()
+        self.import_format_combo.addItems(["voc", "yolo"])
         self.import_overwrite_check = QCheckBox("允许覆盖已有 raw 数据目录")
         self.import_extra_args_edit = QLineEdit("")
         self.import_extra_args_edit.setPlaceholderText("追加 CLI 参数")
@@ -455,6 +457,7 @@ class MainWindow(QMainWindow):
                 [
                     ("数据集名称", self.import_dataset_edit),
                     ("数据 zip", _with_buttons(self.import_zip_edit, [("选择 zip", self._browse_import_zip)])),
+                    ("标注格式", self.import_format_combo),
                     ("", self.import_overwrite_check),
                     ("追加参数", self.import_extra_args_edit),
                 ],
@@ -622,6 +625,7 @@ class MainWindow(QMainWindow):
         ):
             line_edit.textChanged.connect(lambda _text: self._refresh_task_preview())
         for combo_box in (
+            self.import_format_combo,
             self.transform_format_combo,
             self.transform_task_combo,
             self.validate_task_combo,
@@ -857,7 +861,7 @@ class MainWindow(QMainWindow):
             args = [zip_path]
             if dataset:
                 args.extend(["--name", dataset])
-            args.extend(["--format", "voc"])
+            args.extend(["--format", self.import_format_combo.currentText()])
             if self.import_overwrite_check.isChecked():
                 args.append("--overwrite")
             return "od_platform.cli.import_dataset", [*args, *extra_args]

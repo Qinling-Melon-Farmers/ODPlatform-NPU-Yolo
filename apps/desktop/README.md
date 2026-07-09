@@ -26,6 +26,7 @@ pip install -r apps/desktop/requirements.txt
 - 结果浏览：模型评估、数据质检、训练结果支持筛选、搜索和摘要查看。
 - 训练曲线：支持 `results.csv` 对应图表内嵌预览。
 - 任务启动：按任务类型切换独立参数页，通过后台子进程调用 `odp-import-dataset`、`odp-transform`、`odp-validate`、`odp-val`、`odp-train`、`odp-reset`、`odp-plot-training`。
+- 数据导入：支持在桌面端选择 `voc` 或 `yolo` zip；liftrace 这类包含 `data.yaml/images/labels` 的数据集应选择 `yolo`。
 - 项目重置：桌面端支持 `dry-run`、`--backup`、`--yes`、`--force` 开关；默认 dry-run，避免误删运行产物。
 - 训练曲线生成：桌面端可选择 `results.csv`，调用 `odp-plot-training` 生成训练曲线 PNG 和 summary JSON。
 

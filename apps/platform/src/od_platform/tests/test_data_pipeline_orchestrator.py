@@ -28,6 +28,14 @@ class TestDatasetPipeline(unittest.TestCase):
             encoding="utf-8",
         )
 
+    def _write_yolo_sample(self, root: Path, index: int, class_id: int) -> None:
+        image = root / "raw" / "demo-yolo" / "images" / f"sample_{index:03d}.jpg"
+        label = root / "raw" / "demo-yolo" / "annotations" / f"sample_{index:03d}.txt"
+        image.parent.mkdir(parents=True, exist_ok=True)
+        label.parent.mkdir(parents=True, exist_ok=True)
+        image.write_bytes(f"image-{index}".encode())
+        label.write_text(f"{class_id} 0.500000 0.500000 0.200000 0.200000\n", encoding="utf-8")
+
     def test_pipeline_converts_splits_materializes_and_writes_yaml(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             root = Path(temp_dir)
@@ -59,6 +67,40 @@ class TestDatasetPipeline(unittest.TestCase):
             self.assertIn("odp_meta:", content)
             self.assertIn("dataset_name: demo", content)
             self.assertIn("source_format: pascal_voc", content)
+
+    def test_pipeline_reads_yolo_classes_from_raw_data_yaml(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            raw_root = root / "raw" / "demo-yolo"
+            raw_root.mkdir(parents=True)
+            (raw_root / "data.yaml").write_text(
+                "nc: 2\nnames:\n  0: bridge\n  1: tank\n",
+                encoding="utf-8",
+            )
+            for index, class_id in enumerate([0, 0, 1, 1]):
+                self._write_yolo_sample(root, index, class_id)
+
+            processed_dir = root / "processed"
+            configs_dir = root / "configs" / "datasets"
+            with (
+                patch.object(paths, "RAW_DATA_DIR", root / "raw"),
+                patch.object(paths, "PROCESSED_DATA_DIR", processed_dir),
+                patch.object(paths, "DATASET_CONFIGS_DIR", configs_dir),
+            ):
+                result = DatasetPipeline(
+                    "demo-yolo",
+                    AnnotationFormat.YOLO,
+                    train_rate=0.5,
+                    val_rate=0.25,
+                    split_strategy=SplitStrategy.RANDOM,
+                    random_state=42,
+                ).run()
+
+            self.assertEqual(result["counts"], {"train": 2, "val": 1, "test": 1})
+            content = (configs_dir / "demo-yolo.yaml").read_text(encoding="utf-8")
+            self.assertIn("0: bridge", content)
+            self.assertIn("1: tank", content)
+            self.assertIn("source_format: yolo", content)
 
 
 if __name__ == "__main__":
