@@ -14,6 +14,7 @@ from typing import Any
 
 from od_platform.common import paths
 from od_platform.common.refs import resolve_yaml
+from od_platform.common.string_utils import model_slug
 from od_platform.common.system_utils import get_basic_device_info
 from od_platform.runtime_config.api import build_val_config
 from od_platform.runtime_config.val import YOLOValConfig
@@ -163,15 +164,15 @@ def build_evaluation_run_plan(config: YOLOValConfig, *, now: datetime | None = N
     """Build output and log names for one validation run."""
     sequence = _next_evaluation_sequence(config.task)
     timestamp = (now or datetime.now()).strftime("%Y%m%d-%H%M%S")
-    model_slug = _model_slug(config.model)
+    model_slug_value = model_slug(config.model)
     source_run_name = config.name or f"val-{sequence}"
-    audit_run_name = f"{source_run_name}-{timestamp}-{model_slug}"
+    audit_run_name = f"{source_run_name}-{timestamp}-{model_slug_value}"
     ultralytics_project = Path(config.project).resolve() if config.project else paths.RUNS_DIR / "evaluation" / config.task
     return EvaluationRunPlan(
         sequence=sequence,
         timestamp=timestamp,
         task=config.task,
-        model_slug=model_slug,
+        model_slug=model_slug_value,
         source_run_name=source_run_name,
         audit_run_name=audit_run_name,
         source_run_dir=ultralytics_project / source_run_name,
@@ -399,9 +400,3 @@ def _next_evaluation_sequence(task: str) -> int:
         if match:
             numbers.append(int(match.group(1)))
     return max(numbers, default=0) + 1
-
-
-def _model_slug(model_name: str) -> str:
-    stem = Path(str(model_name)).stem or "model"
-    slug = re.sub(r"[^A-Za-z0-9_-]+", "-", stem).strip("-_")
-    return slug or "model"

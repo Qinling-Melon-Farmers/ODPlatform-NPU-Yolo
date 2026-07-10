@@ -1,10 +1,14 @@
+import re
+from pathlib import Path
+
+
 def get_display_width(text: str) -> int:
-    """计算字符串在等宽终端中的实际显示宽度。"""
+    """Return the display width of text in a monospace terminal."""
     return sum(2 if _is_wide_char(char) else 1 for char in text)
 
 
 def _is_wide_char(char: str) -> bool:
-    """判断单字符是否为宽字符。"""
+    """Return True when one character is likely rendered as double width."""
     if "\u4e00" <= char <= "\u9fff":
         return True
     if "\u3000" <= char <= "\u303f":
@@ -23,7 +27,7 @@ def _is_wide_char(char: str) -> bool:
 
 
 def pad_to_width(text: str, width: int, align: str = "left") -> str:
-    """将字符串填充到指定显示宽度。"""
+    """Pad text to a target display width."""
     current = get_display_width(text)
     padding = width - current
     if padding <= 0:
@@ -39,10 +43,10 @@ def pad_to_width(text: str, width: int, align: str = "left") -> str:
 
 
 def format_table_row(columns: list, widths: list, aligns: list | None = None) -> str:
-    """格式化表格一行。"""
+    """Format one table row with display-width aware padding."""
     if aligns is None:
         aligns = ["left"] * len(columns)
-    assert len(columns) == len(widths) == len(aligns), "列数 / 宽度 / 对齐数必须一致"
+    assert len(columns) == len(widths) == len(aligns), "columns, widths and aligns must have the same length"
 
     parts = [
         pad_to_width(str(col), width, align)
@@ -52,6 +56,13 @@ def format_table_row(columns: list, widths: list, aligns: list | None = None) ->
 
 
 def format_table_separator(widths: list, char: str = "-") -> str:
-    """生成与表格列宽匹配的分隔线。"""
+    """Return a separator line matching table column widths."""
     total = sum(widths) + 3 * (len(widths) - 1)
     return char * total
+
+
+def model_slug(model_name: str) -> str:
+    """Return a stable filesystem-safe slug for a model name or path."""
+    stem = Path(str(model_name)).stem or "model"
+    slug = re.sub(r"[^A-Za-z0-9_-]+", "-", stem).strip("-_")
+    return slug or "model"

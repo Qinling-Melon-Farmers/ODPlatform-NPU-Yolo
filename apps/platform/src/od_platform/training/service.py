@@ -18,7 +18,7 @@ import yaml
 from od_platform.common import paths
 from od_platform.common.logging_utils import build_console_formatter, build_file_formatter
 from od_platform.common.refs import resolve_model, resolve_yaml
-from od_platform.common.string_utils import pad_to_width
+from od_platform.common.string_utils import model_slug, pad_to_width
 from od_platform.common.system_utils import get_basic_device_info
 from od_platform.runtime_config.train import YOLOTrainConfig
 from od_platform.training.metrics import (
@@ -61,16 +61,16 @@ def build_training_run_plan(config: YOLOTrainConfig, *, now: datetime | None = N
     """Build a stable run plan: train-N, log file, and archive base name."""
     sequence = _next_training_sequence(config.task)
     timestamp = (now or datetime.now()).strftime("%Y%m%d-%H%M%S")
-    model_slug = _model_slug(config.model)
+    model_slug_value = model_slug(config.model)
     ultralytics_project = Path(config.project).resolve() if config.project else paths.RUNS_DIR / config.task
     requested_run_name = config.name or f"train-{sequence}"
     source_run_name = _available_run_name(ultralytics_project, requested_run_name, exist_ok=config.exist_ok)
-    archive_run_name = f"{source_run_name}-{timestamp}-{model_slug}"
+    archive_run_name = f"{source_run_name}-{timestamp}-{model_slug_value}"
     return TrainingRunPlan(
         sequence=sequence,
         timestamp=timestamp,
         task=config.task,
-        model_slug=model_slug,
+        model_slug=model_slug_value,
         source_run_name=source_run_name,
         archive_run_name=archive_run_name,
         source_run_dir=ultralytics_project / source_run_name,
@@ -356,12 +356,6 @@ def _result_run_dir_candidates(train_result: Any) -> list[Path]:
 
 def _has_training_artifacts(run_dir: Path) -> bool:
     return (run_dir / "results.csv").exists() or (run_dir / "weights" / "best.pt").exists()
-
-
-def _model_slug(model_name: str) -> str:
-    stem = Path(str(model_name)).stem or "model"
-    slug = re.sub(r"[^A-Za-z0-9_-]+", "-", stem).strip("-_")
-    return slug or "model"
 
 
 def _configure_training_logger(log_file: Path) -> logging.Logger:

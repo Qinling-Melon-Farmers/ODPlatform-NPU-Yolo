@@ -11,8 +11,6 @@ from typing import Any
 
 ROOT_DIR = Path(__file__).resolve().parents[2]
 PLATFORM_SRC = ROOT_DIR / "apps" / "platform" / "src"
-if str(PLATFORM_SRC) not in sys.path:
-    sys.path.insert(0, str(PLATFORM_SRC))
 
 try:
     import cv2

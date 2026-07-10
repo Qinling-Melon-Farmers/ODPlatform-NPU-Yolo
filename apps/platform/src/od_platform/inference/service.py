@@ -17,6 +17,7 @@ from typing import Any
 from od_platform.common import paths
 from od_platform.common.logging_utils import build_console_formatter, build_file_formatter
 from od_platform.common.refs import resolve_model
+from od_platform.common.string_utils import model_slug
 from od_platform.common.system_utils import get_basic_device_info
 from od_platform.inference.cancel import CancelToken, PauseToken
 from od_platform.inference.hooks import InferHooks
@@ -78,15 +79,15 @@ def build_inference_run_plan(config: YOLOInferConfig, *, now: datetime | None = 
     """Build output directory and log names for one inference run."""
     sequence = _next_inference_sequence(config.task)
     timestamp = (now or datetime.now()).strftime("%Y%m%d-%H%M%S")
-    model_slug = _model_slug(config.model)
+    model_slug_value = model_slug(config.model)
     source_run_name = config.name or f"predict-{sequence}"
-    audit_run_name = f"{source_run_name}-{timestamp}-{model_slug}"
+    audit_run_name = f"{source_run_name}-{timestamp}-{model_slug_value}"
     ultralytics_project = Path(config.project).resolve() if config.project else paths.INFERENCE_RUNS_DIR / config.task
     return InferenceRunPlan(
         sequence=sequence,
         timestamp=timestamp,
         task=config.task,
-        model_slug=model_slug,
+        model_slug=model_slug_value,
         source_run_name=source_run_name,
         audit_run_name=audit_run_name,
         source_run_dir=ultralytics_project / source_run_name,
@@ -176,7 +177,6 @@ class InferService:
         cli_args: dict[str, Any] | Namespace | None = None,
         *,
         beautify: bool = True,
-        rename_log: bool = True,
         threaded: bool = False,
         warmup_frames: int = 0,
         window_name: str = "odp-infer",
@@ -188,7 +188,6 @@ class InferService:
         max_frames: int | None = None,
     ) -> InferResult:
         """Run frame-by-frame inference and return an error result instead of raising."""
-        del rename_log
         hooks = hooks or InferHooks()
         start = perf_counter()
         output_dir = paths.INFERENCE_RUNS_DIR / "unknown" / "failed"
@@ -323,7 +322,6 @@ def infer_yolo(
     cli_args: dict[str, Any] | Namespace | None = None,
     *,
     beautify: bool = True,
-    rename_log: bool = True,
     threaded: bool = False,
     warmup_frames: int = 0,
     window_name: str = "odp-infer",
@@ -340,7 +338,6 @@ def infer_yolo(
         pipeline_yaml=pipeline_yaml,
         cli_args=cli_args,
         beautify=beautify,
-        rename_log=rename_log,
         threaded=threaded,
         warmup_frames=warmup_frames,
         window_name=window_name,
@@ -489,12 +486,6 @@ def _next_inference_sequence(task: str) -> int:
         if match:
             numbers.append(int(match.group(1)))
     return max(numbers, default=0) + 1
-
-
-def _model_slug(model_name: str) -> str:
-    stem = Path(str(model_name)).stem or "model"
-    slug = re.sub(r"[^A-Za-z0-9_-]+", "-", stem).strip("-_")
-    return slug or "model"
 
 
 def _configure_inference_logger(log_file: Path) -> logging.Logger:
