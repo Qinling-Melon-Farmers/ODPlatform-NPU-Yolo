@@ -135,8 +135,7 @@ class OpenAIClient:
         if tools:
             payload["tools"] = tools
 
-        response = self._post_with_retry("/chat/completions", payload)
-        for line in response:
+        for line in self._stream_post("/chat/completions", payload):
             line = line.decode("utf-8", errors="replace").strip()
             if not line.startswith("data:"):
                 continue
@@ -155,8 +154,8 @@ class OpenAIClient:
 
     # ---- 内部实现 ----
 
-    def _post_with_retry(self, path: str, payload: dict) -> object:
-        """POST JSON 并处理重试，返回响应体（dict 或原始字节迭代器）。"""
+    def _post_with_retry(self, path: str, payload: dict) -> dict:
+        """非流式 POST JSON 并处理重试，在 with 生命周期内读取并返回解析后的 JSON。"""
         url = f"{self.base_url}{path}"
         body = json.dumps(payload).encode("utf-8")
         headers = {
@@ -169,8 +168,6 @@ class OpenAIClient:
             try:
                 request = urllib.request.Request(url, data=body, headers=headers, method="POST")
                 with urllib.request.urlopen(request, timeout=self.timeout) as response:
-                    if payload.get("stream"):
-                        return response  # 流式：调用方逐行读取
                     return json.loads(response.read().decode("utf-8"))
             except urllib.error.HTTPError as exc:
                 error_body = exc.read().decode("utf-8", errors="replace")
@@ -187,6 +184,45 @@ class OpenAIClient:
                     logger.warning("网络错误 (%s)，第 %d 次重试", type(exc).__name__, attempt)
                     continue
                 raise APIError(0, f"网络请求失败: {type(exc).__name__}: {exc}") from exc
+
+    def _stream_post(self, path: str, payload: dict) -> Iterator[bytes]:
+        """流式 POST JSON，逐行产出响应字节。
+
+        连接阶段错误可重试；响应在生成器内部持有 ``with urlopen`` 生命周期，
+        调用方迭代期间响应始终打开（修复"退出 with 后读取失败"问题）。
+        流开始后的读取错误不重试（可能已消费部分数据）。
+        """
+        url = f"{self.base_url}{path}"
+        body = json.dumps(payload).encode("utf-8")
+        headers = {
+            "Content-Type": "application/json",
+            "Authorization": f"Bearer {self.api_key}",
+        }
+
+        attempt = 0
+        while True:
+            try:
+                request = urllib.request.Request(url, data=body, headers=headers, method="POST")
+                response = urllib.request.urlopen(request, timeout=self.timeout)
+                break
+            except urllib.error.HTTPError as exc:
+                error_body = exc.read().decode("utf-8", errors="replace")
+                if exc.code in _RETRY_STATUSES and attempt < self.max_retries:
+                    attempt += 1
+                    _sleep_backoff(attempt)
+                    logger.warning("API 返回 %d，第 %d 次重试", exc.code, attempt)
+                    continue
+                raise APIError(exc.code, f"API 请求失败: HTTP {exc.code}", error_body) from exc
+            except (urllib.error.URLError, TimeoutError, OSError) as exc:
+                if attempt < self.max_retries:
+                    attempt += 1
+                    _sleep_backoff(attempt)
+                    logger.warning("网络错误 (%s)，第 %d 次重试", type(exc).__name__, attempt)
+                    continue
+                raise APIError(0, f"网络请求失败: {type(exc).__name__}: {exc}") from exc
+
+        with response:
+            yield from response
 
 
 def _sleep_backoff(attempt: int) -> None:

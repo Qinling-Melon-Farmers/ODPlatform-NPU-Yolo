@@ -34,6 +34,30 @@ class FakeHTTPResponse:
         return iter(self._payload.splitlines(keepends=True))
 
 
+class ShortLivedResponse:
+    """模拟真实 HTTPResponse：退出 context 后迭代抛错。
+
+    用于回归验证：流式客户端必须在 with 生命周期内迭代响应，
+    不能在退出 context 后再读取。
+    """
+
+    def __init__(self, payload: bytes | str) -> None:
+        self._payload = payload if isinstance(payload, bytes) else payload.encode("utf-8")
+        self._closed = False
+
+    def __enter__(self) -> "ShortLivedResponse":
+        return self
+
+    def __exit__(self, *_args: object) -> None:
+        self._closed = True
+        return None
+
+    def __iter__(self):
+        if self._closed:
+            raise RuntimeError("response already closed")
+        return iter(self._payload.splitlines(keepends=True))
+
+
 def _find_header(headers: dict, name: str) -> str | None:
     """大小写不敏感地从 headers dict 查找（urllib 将键规范化为 Content-type）。"""
     lowered = name.lower()
@@ -154,6 +178,23 @@ class TestOpenAIClient(unittest.TestCase):
         with patch("od_platform.agent.client.urllib.request.urlopen", side_effect=fake_urlopen):
             chunks = list(client.chat_stream([{"role": "user", "content": "x"}], model="m"))
         self.assertEqual(chunks, ["你", "好"])
+
+    def test_stream_holds_response_lifetime(self) -> None:
+        """流式客户端必须在 with 生命周期内迭代（退出 context 后读取失败场景）。"""
+        client = self._make_client()
+        sse_lines = [
+            "data: " + json.dumps({"choices": [{"delta": {"content": "流"}}]}),
+            "data: " + json.dumps({"choices": [{"delta": {"content": "式"}}]}),
+            "data: [DONE]",
+        ]
+        payload = "\n".join(sse_lines) + "\n"
+
+        def fake_urlopen(request, **kwargs):
+            return ShortLivedResponse(payload)
+
+        with patch("od_platform.agent.client.urllib.request.urlopen", side_effect=fake_urlopen):
+            chunks = list(client.chat_stream([{"role": "user", "content": "x"}], model="m"))
+        self.assertEqual(chunks, ["流", "式"])
 
     def test_network_error_retries_then_raises(self) -> None:
         client = OpenAIClient(api_key="k", base_url="https://example.com/v1", max_retries=1)
