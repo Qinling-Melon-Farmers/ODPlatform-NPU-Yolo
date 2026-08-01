@@ -52,3 +52,39 @@ def resolve_model(ref: str) -> Path:
         if candidate.exists():
             return candidate.resolve()
     return path
+
+
+def list_local_model_weights() -> list[str]:
+    """列出模型资产目录下已存在的权重文件名。
+
+    Returns:
+        模型目录中实际存在的 .pt/.pth 文件名列表（去重，按目录优先级排序）。
+    """
+    seen: list[str] = []
+    for base_dir in (
+        paths.CHECKPOINTS_DIR,
+        paths.TRAINED_MODELS_DIR,
+        paths.PRETRAINED_MODELS_DIR,
+        paths.ROOT_DIR,
+    ):
+        if not base_dir.exists():
+            continue
+        for candidate in sorted(base_dir.iterdir()):
+            if candidate.suffix.lower() in (".pt", ".pth") and candidate.name not in seen:
+                seen.append(candidate.name)
+    return seen
+
+
+def list_available_models() -> list[str]:
+    """列出可用的模型引用名：目录条目 + 本地权重。
+
+    Returns:
+        模型引用名列表，目录在前（保持定义顺序），本地权重在后。
+    """
+    from od_platform.model_catalog.catalog import list_models
+
+    names = [info.name for info in list_models()]
+    for local_name in list_local_model_weights():
+        if local_name not in names:
+            names.append(local_name)
+    return names

@@ -56,6 +56,8 @@ odp-val = "od_platform.cli.evaluate_model:main"
 odp-infer = "od_platform.cli.infer_model:main"
 odp-plot-training = "od_platform.cli.plot_training:main"
 odp-import-dataset = "od_platform.cli.import_dataset:main"
+odp-list-models = "od_platform.model_catalog.cli.list_models:main"
+odp-annotate = "od_platform.annotation.cli.annotate:main"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/od_platform"]

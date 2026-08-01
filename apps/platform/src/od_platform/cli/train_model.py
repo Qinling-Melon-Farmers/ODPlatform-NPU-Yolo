@@ -20,7 +20,10 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--config", "-c", "--yaml", dest="config", default="train", help="Runtime config name or yaml path.")
     parser.add_argument("--executor", "-e", help="Executor name written into the training manifest.")
     parser.add_argument("--dry-run", action="store_true", help="Write plan/logs only, without starting Ultralytics.")
-    parser.add_argument("--model", help="Override model path or model name.")
+    parser.add_argument(
+        "--model",
+        help="Override model path or model name. Run odp-list-models to see available models.",
+    )
     parser.add_argument("--data", help="Override dataset yaml name or path.")
     parser.add_argument("--epochs", type=int, help="Override training epochs.")
     parser.add_argument("--batch", type=int, help="Override batch size.")

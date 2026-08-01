@@ -22,7 +22,10 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--executor", "-e", help="Executor name written into the inference manifest.")
     parser.add_argument("--dry-run", action="store_true", help="Write plan/logs only, without starting Ultralytics.")
     parser.add_argument("--pipeline-yaml", help="Frame-source and visualization config yaml.")
-    parser.add_argument("--model", help="Override model path or model name.")
+    parser.add_argument(
+        "--model",
+        help="Override model path or model name. Run odp-list-models to see available models.",
+    )
     parser.add_argument("--source", help="Override inference source: image, directory, video, URL or camera index.")
     parser.add_argument("--task", choices=Task.end_to_end(), help="Override task. Segment is reserved for future work.")
     parser.add_argument("--imgsz", type=int, help="Override image size.")
