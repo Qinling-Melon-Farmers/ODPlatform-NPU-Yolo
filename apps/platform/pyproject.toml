@@ -58,6 +58,7 @@ odp-plot-training = "od_platform.cli.plot_training:main"
 odp-import-dataset = "od_platform.cli.import_dataset:main"
 odp-list-models = "od_platform.model_catalog.cli.list_models:main"
 odp-annotate = "od_platform.annotation.cli.annotate:main"
+odp-agent = "od_platform.agent.cli.agent_chat:main"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/od_platform"]
