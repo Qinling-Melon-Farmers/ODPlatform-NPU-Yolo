@@ -143,7 +143,19 @@ class MainWindow(QMainWindow):
 
         self.desktop_task_combo = QComboBox()
         self.desktop_task_combo.addItems(
-            ["导入数据集", "数据转换", "数据质检", "模型评估", "模型训练", "项目重置", "训练曲线生成", "列出模型", "数据标注"]
+            [
+                "导入数据集",
+                "数据转换",
+                "数据质检",
+                "模型评估",
+                "模型训练",
+                "项目重置",
+                "训练曲线生成",
+                "列出模型",
+                "数据标注",
+                "自动标注",
+                "AI 任务",
+            ]
         )
         self.task_stack = QStackedWidget()
 
@@ -247,6 +259,41 @@ class MainWindow(QMainWindow):
         self.annotate_resume_check = QCheckBox("恢复中断的标注会话（跳过已标注图片）")
         self.annotate_extra_args_edit = QLineEdit("")
         self.annotate_extra_args_edit.setPlaceholderText("追加 CLI 参数")
+
+        self.auto_annotate_dataset_edit = QLineEdit("")
+        self.auto_annotate_dataset_edit.setPlaceholderText("数据集名称，位于 data/raw/<name>/")
+        self.auto_annotate_classes_edit = QLineEdit("")
+        self.auto_annotate_classes_edit.setPlaceholderText("空格分隔的类别名，如：cat dog ship")
+        self.auto_annotate_prompt_edit = QLineEdit("框出所有目标")
+        self.auto_annotate_prompt_edit.setPlaceholderText("自然语言标注指令，如：框出所有飞机")
+        self.auto_annotate_base_url_edit = QLineEdit("")
+        self.auto_annotate_base_url_edit.setPlaceholderText("OpenAI 兼容 API 地址（必填），如 DashScope/Qwen 兼容端点")
+        self.auto_annotate_model_edit = QLineEdit("")
+        self.auto_annotate_model_edit.setPlaceholderText("视觉模型名（必填），如 qwen-vl-max / glm-4.5v-turbo")
+        self.auto_annotate_api_key_edit = QLineEdit("")
+        self.auto_annotate_api_key_edit.setEchoMode(QLineEdit.EchoMode.Password)
+        self.auto_annotate_api_key_edit.setPlaceholderText("API 密钥；留空读环境变量 OPENAI_API_KEY")
+        self.auto_annotate_limit_spin = QSpinBox()
+        self.auto_annotate_limit_spin.setRange(0, 1_000_000)
+        self.auto_annotate_limit_spin.setSpecialValueText("不限")
+        self.auto_annotate_dry_run_check = QCheckBox("dry-run：只统计待标注数量，不调用 API")
+        self.auto_annotate_dry_run_check.setChecked(True)
+        self.auto_annotate_extra_args_edit = QLineEdit("")
+        self.auto_annotate_extra_args_edit.setPlaceholderText("追加 CLI 参数")
+
+        self.ai_task_prompt_edit = QLineEdit("")
+        self.ai_task_prompt_edit.setPlaceholderText("自然语言任务，如：用最快的模型训练 rsod 数据集")
+        self.ai_task_base_url_edit = QLineEdit("")
+        self.ai_task_base_url_edit.setPlaceholderText("OpenAI 兼容 API 地址（必填），如 https://api.deepseek.com/v1")
+        self.ai_task_model_edit = QLineEdit("")
+        self.ai_task_model_edit.setPlaceholderText("模型名（必填），如 deepseek-chat")
+        self.ai_task_api_key_edit = QLineEdit("")
+        self.ai_task_api_key_edit.setEchoMode(QLineEdit.EchoMode.Password)
+        self.ai_task_api_key_edit.setPlaceholderText("API 密钥；留空读环境变量 OPENAI_API_KEY")
+        self.ai_task_dry_run_check = QCheckBox("dry-run：训练/推理以计划模式执行")
+        self.ai_task_dry_run_check.setChecked(True)
+        self.ai_task_extra_args_edit = QLineEdit("")
+        self.ai_task_extra_args_edit.setPlaceholderText("追加 CLI 参数")
 
         self.task_command_preview = QTextEdit()
         self.task_command_preview.setReadOnly(True)
@@ -751,6 +798,35 @@ class MainWindow(QMainWindow):
                 ],
             )
         )
+        self.task_stack.addWidget(
+            _form_page(
+                "自动标注参数（VLM）",
+                [
+                    ("数据集名称", self.auto_annotate_dataset_edit),
+                    ("类别列表", self.auto_annotate_classes_edit),
+                    ("标注指令", self.auto_annotate_prompt_edit),
+                    ("API 地址", self.auto_annotate_base_url_edit),
+                    ("视觉模型", self.auto_annotate_model_edit),
+                    ("API 密钥", self.auto_annotate_api_key_edit),
+                    ("数量上限", self.auto_annotate_limit_spin),
+                    ("", self.auto_annotate_dry_run_check),
+                    ("追加参数", self.auto_annotate_extra_args_edit),
+                ],
+            )
+        )
+        self.task_stack.addWidget(
+            _form_page(
+                "AI 任务参数",
+                [
+                    ("自然语言任务", self.ai_task_prompt_edit),
+                    ("API 地址", self.ai_task_base_url_edit),
+                    ("模型名", self.ai_task_model_edit),
+                    ("API 密钥", self.ai_task_api_key_edit),
+                    ("", self.ai_task_dry_run_check),
+                    ("追加参数", self.ai_task_extra_args_edit),
+                ],
+            )
+        )
 
         controls = QHBoxLayout()
         controls.addWidget(self.task_start_button)
@@ -843,6 +919,18 @@ class MainWindow(QMainWindow):
             self.annotate_dataset_edit,
             self.annotate_classes_edit,
             self.annotate_extra_args_edit,
+            self.auto_annotate_dataset_edit,
+            self.auto_annotate_classes_edit,
+            self.auto_annotate_prompt_edit,
+            self.auto_annotate_base_url_edit,
+            self.auto_annotate_model_edit,
+            self.auto_annotate_api_key_edit,
+            self.auto_annotate_extra_args_edit,
+            self.ai_task_prompt_edit,
+            self.ai_task_base_url_edit,
+            self.ai_task_model_edit,
+            self.ai_task_api_key_edit,
+            self.ai_task_extra_args_edit,
         ):
             line_edit.textChanged.connect(lambda _text: self._refresh_task_preview())
         for combo_box in (
@@ -853,12 +941,20 @@ class MainWindow(QMainWindow):
             self.list_models_family_combo,
         ):
             combo_box.currentTextChanged.connect(lambda _text: self._refresh_task_preview())
-        for spin_box in (self.train_epochs_spin, self.train_batch_spin, self.train_workers_spin, self.list_models_limit_spin):
+        for spin_box in (
+            self.train_epochs_spin,
+            self.train_batch_spin,
+            self.train_workers_spin,
+            self.list_models_limit_spin,
+            self.auto_annotate_limit_spin,
+        ):
             spin_box.valueChanged.connect(lambda _value: self._refresh_task_preview())
         self.import_overwrite_check.stateChanged.connect(lambda _value: self._refresh_task_preview())
         self.train_dry_run_check.stateChanged.connect(lambda _value: self._refresh_task_preview())
         self.list_models_json_check.stateChanged.connect(lambda _value: self._refresh_task_preview())
         self.annotate_resume_check.stateChanged.connect(lambda _value: self._refresh_task_preview())
+        self.auto_annotate_dry_run_check.stateChanged.connect(lambda _value: self._refresh_task_preview())
+        self.ai_task_dry_run_check.stateChanged.connect(lambda _value: self._refresh_task_preview())
         for check_box in (
             self.reset_dry_run_check,
             self.reset_yes_check,
@@ -1230,6 +1326,48 @@ class MainWindow(QMainWindow):
             if self.annotate_resume_check.isChecked():
                 args.append("--resume")
             return "od_platform.annotation.cli.annotate", [*args, *extra_args]
+
+        if task_name == "自动标注":
+            dataset = self.auto_annotate_dataset_edit.text().strip()
+            classes = self.auto_annotate_classes_edit.text().split()
+            prompt = self.auto_annotate_prompt_edit.text().strip()
+            base_url = self.auto_annotate_base_url_edit.text().strip()
+            model = self.auto_annotate_model_edit.text().strip()
+            api_key = self.auto_annotate_api_key_edit.text().strip()
+            extra_args = _split_extra_args(self.auto_annotate_extra_args_edit.text().strip())
+            if not dataset:
+                raise ValueError("自动标注需要填写数据集名称")
+            if not classes:
+                raise ValueError("自动标注需要填写至少一个类别名")
+            if not base_url:
+                raise ValueError("自动标注需要填写 API 地址")
+            if not model:
+                raise ValueError("自动标注需要填写视觉模型名")
+            args = ["--dataset", dataset, "--classes", *classes, "--prompt", prompt, "--base-url", base_url, "--model", model]
+            if api_key:
+                args.extend(["--api-key", api_key])
+            if self.auto_annotate_limit_spin.value():
+                args.extend(["--limit", str(self.auto_annotate_limit_spin.value())])
+            if self.auto_annotate_dry_run_check.isChecked():
+                args.append("--dry-run")
+            return "od_platform.annotation.cli.auto_annotate", [*args, *extra_args]
+
+        if task_name == "AI 任务":
+            prompt = self.ai_task_prompt_edit.text().strip()
+            base_url = self.ai_task_base_url_edit.text().strip()
+            model = self.ai_task_model_edit.text().strip()
+            api_key = self.ai_task_api_key_edit.text().strip()
+            extra_args = _split_extra_args(self.ai_task_extra_args_edit.text().strip())
+            if not prompt:
+                raise ValueError("AI 任务需要填写自然语言任务描述")
+            if not base_url:
+                raise ValueError("AI 任务需要填写 API 地址")
+            if not model:
+                raise ValueError("AI 任务需要填写模型名")
+            args = ["--base-url", base_url, "--model", model, "--task", prompt]
+            if api_key:
+                args.extend(["--api-key", api_key])
+            return "od_platform.agent.cli.agent_chat", [*args, *extra_args]
 
         raise ValueError(f"未知任务: {task_name}")
 

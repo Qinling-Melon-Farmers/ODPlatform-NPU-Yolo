@@ -31,6 +31,8 @@ pip install -r apps/desktop/requirements.txt
 - 项目重置：桌面端支持 `dry-run`、`--backup`、`--yes`、`--force` 开关；默认 dry-run，避免误删运行产物。
 - 训练曲线生成：桌面端可选择 `results.csv`，调用 `odp-plot-training` 生成训练曲线 PNG 和 summary JSON。
 - 数据标注：调用 `odp-annotate` 打开 OpenCV 交互式标注窗口，支持类别列表与断点恢复（`--resume`）。
+- 自动标注（VLM）：调用 `odp-auto-annotate` 接入视觉大模型（如 Qwen-VL / GLM-4.5V）按自然语言指令批量标注，支持断点续跑；默认 dry-run 避免误触发 API 调用。
+- AI 任务：调用 `odp-agent` 用自然语言驱动平台执行目标检测任务（如"用最快的模型训练 rsod"），API 地址与模型必填（如 DeepSeek）。
 
 训练任务默认 dry-run，避免在桌面端误触发长时间训练。
 
