@@ -1040,6 +1040,8 @@ class MainWindow(QMainWindow):
         self.task_stop_button.clicked.connect(self._stop_task)
         self.agent_send_button.clicked.connect(self._start_agent)
         self.agent_stop_button.clicked.connect(self._stop_agent)
+        # AI 助手页与 AI 任务页共享 API 配置（双向同步，防重复填写）
+        self._sync_agent_config_fields()
         self._switch_task_page(self.desktop_task_combo.currentIndex())
         self._refresh_task_preview()
         self._refresh_model_catalog()
@@ -1236,6 +1238,27 @@ class MainWindow(QMainWindow):
         self.task_start_button.setEnabled(True)
         self.task_stop_button.setEnabled(False)
         self._refresh_all_result_tabs()
+
+    def _sync_agent_config_fields(self) -> None:
+        """AI 助手页与 AI 任务页的 API 配置字段双向同步（防重复维护）。"""
+        self._syncing_agent_config = False
+
+        def _link(source, target) -> None:
+            def _handler(text: str) -> None:
+                if self._syncing_agent_config:
+                    return
+                self._syncing_agent_config = True
+                target.setText(text)
+                self._syncing_agent_config = False
+
+            source.textChanged.connect(_handler)
+
+        _link(self.agent_base_url_edit, self.ai_task_base_url_edit)
+        _link(self.ai_task_base_url_edit, self.agent_base_url_edit)
+        _link(self.agent_model_edit, self.ai_task_model_edit)
+        _link(self.ai_task_model_edit, self.agent_model_edit)
+        _link(self.agent_api_key_edit, self.ai_task_api_key_edit)
+        _link(self.ai_task_api_key_edit, self.agent_api_key_edit)
 
     @Slot()
     def _start_agent(self) -> None:
