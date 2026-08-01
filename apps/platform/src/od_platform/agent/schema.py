@@ -21,7 +21,8 @@ from dataclasses import dataclass, field
 from typing import Any
 
 #: 排除的控制字段 dest（agent 自行管理，不暴露给 LLM）。
-CONTROL_DESTS: frozenset[str] = frozenset({"config", "executor", "dry_run", "log_level", "verbose"})
+#: 注意：verbose 仅为日志级别开关，对 LLM 无害，不排除。
+CONTROL_DESTS: frozenset[str] = frozenset({"config", "executor", "dry_run", "log_level"})
 
 #: 类型 → JSON Schema type 映射。
 _TYPE_MAP: dict[str, str] = {
