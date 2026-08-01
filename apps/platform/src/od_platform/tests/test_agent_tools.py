@@ -1,5 +1,6 @@
 import argparse
 import importlib
+import subprocess
 import tempfile
 import unittest
 from pathlib import Path
@@ -10,6 +11,7 @@ from od_platform.agent.tools import (
     ToolRegistry,
     _argv_from_arguments,
     _redact_arguments,
+    _run_cli_subprocess,
     _summarize_output,
     build_default_registry,
 )
@@ -116,7 +118,8 @@ class TestMiniCliExecution(unittest.TestCase):
     def _make_registry(self, *, dry_run: bool = False) -> ToolRegistry:
         import od_platform.tests._agent_mini_cli as mini_cli
 
-        registry = ToolRegistry(dry_run=dry_run)
+        # 进程内快速路径（捕获日志断言用）
+        registry = ToolRegistry(dry_run=dry_run, execution="inproc")
         registry.register_cli(mini_cli.__name__)
         return registry
 
@@ -151,11 +154,19 @@ class TestMiniCliExecution(unittest.TestCase):
         import od_platform.tests._agent_mini_cli as mini_cli
 
         registry = ToolRegistry()
-        registry.register_cli(mini_cli.__name__, requires_confirmation=True)
+        registry.register_cli(mini_cli.__name__, risk_level="write_files")
         result = registry.execute("mini", {"input": "ok"})
         self.assertFalse(result.ok)
         self.assertIn("确认", result.summary)
         registry.confirm("mini")
+        result = registry.execute("mini", {"input": "ok"})
+        self.assertTrue(result.ok)
+
+    def test_read_only_auto_executes(self) -> None:
+        import od_platform.tests._agent_mini_cli as mini_cli
+
+        registry = ToolRegistry()
+        registry.register_cli(mini_cli.__name__)  # 默认 read_only
         result = registry.execute("mini", {"input": "ok"})
         self.assertTrue(result.ok)
 
@@ -171,6 +182,36 @@ class TestMiniCliExecution(unittest.TestCase):
         if schema is not None:
             self.assertNotIn("api_key", schema.parameters["properties"])
             self.assertNotIn("base_url", schema.parameters["properties"])
+
+
+class TestSubprocessExecutor(unittest.TestCase):
+    def test_subprocess_runs_real_cli(self) -> None:
+        """子进程执行真实 CLI（--help 快速验证），隔离路径可用。"""
+        output = _run_cli_subprocess("od_platform.cli.evaluate_model", ["--help"])
+        self.assertEqual(output.exit_code, 0)
+        self.assertIn("usage", output.output.lower())
+
+    def test_subprocess_returns_error_exit_code(self) -> None:
+        """子进程执行缺必填参数 CLI 返回非零退出码。"""
+        output = _run_cli_subprocess("od_platform.tests._agent_mini_cli", [])
+        self.assertEqual(output.exit_code, 2)  # argparse 缺位置参数
+
+    def test_subprocess_timeout_maps_to_124(self) -> None:
+        """超时返回退出码 124 且输出含超时提示。"""
+        with patch("od_platform.agent.tools.subprocess.run", side_effect=subprocess.TimeoutExpired(cmd=[], timeout=0.001)):
+            output = _run_cli_subprocess("od_platform.cli.evaluate_model", ["--help"], timeout=0.001)
+        self.assertEqual(output.exit_code, 124)
+        self.assertIn("超时", output.output)
+
+    def test_registry_subprocess_execution_mode(self) -> None:
+        """registry execution=subprocess 时 CLI 工具走子进程路径。"""
+        import od_platform.tests._agent_mini_cli as mini_cli
+
+        registry = ToolRegistry(execution="subprocess")
+        registry.register_cli(mini_cli.__name__)
+        result = registry.execute("mini", {"input": "ok"})
+        self.assertTrue(result.ok)
+        self.assertEqual(result.exit_code, 0)
 
 
 class TestDefaultRegistry(unittest.TestCase):
@@ -191,6 +232,16 @@ class TestDefaultRegistry(unittest.TestCase):
             self.assertEqual(schema["type"], "function")
             self.assertIn("name", schema["function"])
             self.assertIn("parameters", schema["function"])
+
+    def test_default_registry_risk_levels(self) -> None:
+        """默认注册表风险分配：训练/评估/推理为 GPU 长任务，自动标注为消耗 API。"""
+        registry = build_default_registry()
+        self.assertEqual(registry.risk_level("odp-train"), "gpu_long_run")
+        self.assertEqual(registry.risk_level("odp-auto-annotate"), "cost_api")
+        self.assertEqual(registry.risk_level("odp-import-dataset"), "write_files")
+        # 服务工具为只读
+        result = registry.execute("list_run_artifacts", {"task": "train", "limit": 1})
+        self.assertTrue(result.ok)
 
     def test_service_tools_execute(self) -> None:
         from od_platform.common import paths

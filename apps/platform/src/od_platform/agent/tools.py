@@ -17,8 +17,11 @@ import importlib
 import io
 import json
 import logging
+import os
 import re
+import subprocess
 import sys
+import time
 from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
@@ -105,11 +108,20 @@ class ToolRegistry:
         dry_run: 安全模式；True 时对注册了 ``dry_run_flag`` 的工具自动追加
                  ``--dry-run``（训练/推理等耗时工具默认不真实执行）。
         executor: 执行人标识，写入工具执行的审计日志。
+        execution: CLI 工具执行方式——``subprocess``（默认，隔离性好，
+                 评审 P2-1 推荐）或 ``inproc``（进程内快速路径，测试用）。
     """
 
-    def __init__(self, *, dry_run: bool = False, executor: str = "agent") -> None:
+    def __init__(
+        self,
+        *,
+        dry_run: bool = False,
+        executor: str = "agent",
+        execution: str = "subprocess",
+    ) -> None:
         self.dry_run = dry_run
         self.executor = executor
+        self.execution = execution
         self._cli_entries: dict[str, _CliEntry] = {}
         self._service_entries: dict[str, _ServiceEntry] = {}
         self.confirmed_tools: set[str] = set()
@@ -288,7 +300,10 @@ class ToolRegistry:
         if self.dry_run and entry.dry_run_flag:
             argv.append("--dry-run")
 
-        output = _run_cli(entry.module, entry.entry, argv, executor=self.executor)
+        if self.execution == "subprocess":
+            output = _run_cli_subprocess(entry.module, argv)
+        else:
+            output = _run_cli(entry.module, entry.entry, argv, executor=self.executor)
         summary = _summarize_output(output.output)
         return ToolResult(
             name=name,
@@ -309,6 +324,56 @@ class _CliOutput:
     exit_code: int
     output: str
     details: str
+
+
+def _run_cli_subprocess(module: str, argv: list[str], *, timeout: float | None = None) -> _CliOutput:
+    """子进程执行 CLI 模块（``<当前解释器> -m <module> <argv>``）。
+
+    子进程继承当前环境的 PYTHONPATH 与 KMP_DUPLICATE_LIB_OK，
+    与训练/推理等重状态模块完全隔离（评审 P2-1 推荐路径）。
+
+    Args:
+        module:  CLI 模块路径。
+        argv:    命令行参数。
+        timeout: 超时秒数；超时返回退出码 124。
+
+    Returns:
+        合并 stdout+stderr 的输出与退出码。
+    """
+    from od_platform.common import paths
+
+    command = [sys.executable, "-m", module, *argv]
+    # 继承当前进程的平台 src 路径（开发/测试环境经 sys.path 注入时子进程同样可导入）
+    env = os.environ.copy()
+    platform_src = [path for path in sys.path if path.replace("\\", "/").endswith("apps/platform/src")]
+    existing_pythonpath = env.get("PYTHONPATH", "")
+    additions = [path for path in platform_src if path not in existing_pythonpath]
+    if additions:
+        env["PYTHONPATH"] = os.pathsep.join([*additions, existing_pythonpath] if existing_pythonpath else additions)
+
+    start = time.perf_counter()
+    try:
+        proc = subprocess.run(
+            command,
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            timeout=timeout,
+            cwd=paths.ROOT_DIR,
+            env=env,
+        )
+        exit_code = proc.returncode
+        output = (proc.stdout or "") + (proc.stderr or "")
+    except subprocess.TimeoutExpired as exc:
+        exit_code = 124
+        output = f"子进程超时（>{timeout}s）: {exc.stdout or ''}"
+    except OSError as exc:
+        exit_code = 2
+        output = f"子进程启动失败: {type(exc).__name__}: {exc}"
+    duration_ms = int((time.perf_counter() - start) * 1000)
+    logger.debug("子进程 %s 执行 %d ms，退出码 %d", module, duration_ms, exit_code)
+    return _CliOutput(exit_code=exit_code, output=output, details=output)
 
 
 def _run_cli(module: str, entry: str, argv: list[str], *, executor: str) -> _CliOutput:
