@@ -142,8 +142,23 @@ class MainWindow(QMainWindow):
         self.next_plot_button = QPushButton("下一张图")
 
         self.desktop_task_combo = QComboBox()
-        self.desktop_task_combo.addItems(["导入数据集", "数据转换", "数据质检", "模型评估", "模型训练", "项目重置", "训练曲线生成"])
+        self.desktop_task_combo.addItems(
+            ["导入数据集", "数据转换", "数据质检", "模型评估", "模型训练", "项目重置", "训练曲线生成", "列出模型", "数据标注"]
+        )
         self.task_stack = QStackedWidget()
+
+        self.model_catalog_list = QListWidget()
+        self.model_catalog_filter_edit = QLineEdit("")
+        self.model_catalog_filter_edit.setPlaceholderText("按名称/描述筛选模型")
+        self.model_catalog_family_combo = QComboBox()
+        self.model_catalog_family_combo.addItems(["全部", "yolov5", "yolov7", "yolov8", "yolov9", "yolov10", "yolo11", "yolo12"])
+        self.model_catalog_recommend_edit = QLineEdit("")
+        self.model_catalog_recommend_edit.setPlaceholderText("如：最快 / 最准 / yolov8 最准")
+        self.model_catalog_recommend_button = QPushButton("推荐")
+        self.model_catalog_apply_train_button = QPushButton("应用到模型训练")
+        self.model_catalog_apply_infer_button = QPushButton("应用到模型推理")
+        self.model_catalog_detail = QTextEdit()
+        self.model_catalog_detail.setReadOnly(True)
 
         self.import_dataset_edit = QLineEdit("steel-surface-defect")
         self.import_zip_edit = QLineEdit("")
@@ -215,6 +230,25 @@ class MainWindow(QMainWindow):
         self.plot_extra_args_edit = QLineEdit("")
         self.plot_extra_args_edit.setPlaceholderText("追加 CLI 参数")
 
+        self.list_models_family_combo = QComboBox()
+        self.list_models_family_combo.addItems(["全部", "yolov5", "yolov7", "yolov8", "yolov9", "yolov10", "yolo11", "yolo12"])
+        self.list_models_recommend_edit = QLineEdit("")
+        self.list_models_recommend_edit.setPlaceholderText("自然语言推荐，如：最快 / 最准")
+        self.list_models_limit_spin = QSpinBox()
+        self.list_models_limit_spin.setRange(1, 100)
+        self.list_models_limit_spin.setValue(10)
+        self.list_models_json_check = QCheckBox("JSON 格式输出")
+        self.list_models_extra_args_edit = QLineEdit("")
+        self.list_models_extra_args_edit.setPlaceholderText("追加 CLI 参数")
+
+        self.annotate_dataset_edit = QLineEdit("")
+        self.annotate_dataset_edit.setPlaceholderText("数据集名称，位于 data/raw/<name>/")
+        self.annotate_classes_edit = QLineEdit("")
+        self.annotate_classes_edit.setPlaceholderText("空格分隔的类别名，如：cat dog ship")
+        self.annotate_resume_check = QCheckBox("恢复中断的标注会话（跳过已标注图片）")
+        self.annotate_extra_args_edit = QLineEdit("")
+        self.annotate_extra_args_edit.setPlaceholderText("追加 CLI 参数")
+
         self.task_command_preview = QTextEdit()
         self.task_command_preview.setReadOnly(True)
         self.task_command_preview.setMaximumHeight(100)
@@ -240,6 +274,7 @@ class MainWindow(QMainWindow):
         root.addWidget(self._build_header())
 
         tabs = QTabWidget()
+        self.tabs = tabs
         tabs.addTab(self._build_inference_tab(), "推理")
         tabs.addTab(
             self._build_browser_tab(
@@ -265,6 +300,7 @@ class MainWindow(QMainWindow):
             ),
             "数据质检",
         )
+        tabs.addTab(self._build_model_catalog_tab(), "模型目录")
         tabs.addTab(self._build_training_tab(), "训练结果")
         tabs.addTab(self._build_tasks_tab(), "任务启动")
         root.addWidget(tabs)
@@ -309,7 +345,13 @@ class MainWindow(QMainWindow):
         root = QVBoxLayout(panel)
         form_group = QGroupBox("推理参数")
         form = QFormLayout(form_group)
-        form.addRow("模型", _with_buttons(self.model_edit, [("选择权重", self._browse_model)]))
+        form.addRow(
+            "模型",
+            _with_buttons(
+                self.model_edit,
+                [("选择权重", self._browse_model), ("模型目录", self._open_model_catalog)],
+            ),
+        )
         form.addRow(
             "输入源",
             _with_buttons(
@@ -393,6 +435,139 @@ class MainWindow(QMainWindow):
         root = QHBoxLayout(page)
         root.addWidget(splitter)
         return page
+
+    def _build_model_catalog_tab(self) -> QWidget:
+        refresh_button = QPushButton("刷新")
+        recommend_row = QWidget()
+        recommend_layout = QHBoxLayout(recommend_row)
+        recommend_layout.setContentsMargins(0, 0, 0, 0)
+        recommend_layout.addWidget(QLabel("推荐"))
+        recommend_layout.addWidget(self.model_catalog_recommend_edit)
+        recommend_layout.addWidget(self.model_catalog_recommend_button)
+
+        apply_row = QWidget()
+        apply_layout = QHBoxLayout(apply_row)
+        apply_layout.setContentsMargins(0, 0, 0, 0)
+        apply_layout.addWidget(self.model_catalog_apply_train_button)
+        apply_layout.addWidget(self.model_catalog_apply_infer_button)
+        apply_layout.addStretch(1)
+
+        title_label = QLabel("模型目录")
+        title_label.setObjectName("SectionTitle")
+        hint_label = QLabel("浏览内置 YOLO 系列模型，支持自然语言推荐，可应用到训练/推理。")
+        hint_label.setObjectName("HintText")
+
+        left = QVBoxLayout()
+        left.addWidget(title_label)
+        left.addWidget(hint_label)
+        left.addWidget(recommend_row)
+        filter_row = QWidget()
+        filter_layout = QHBoxLayout(filter_row)
+        filter_layout.setContentsMargins(0, 0, 0, 0)
+        filter_layout.addWidget(QLabel("系列"))
+        filter_layout.addWidget(self.model_catalog_family_combo)
+        filter_layout.addWidget(self.model_catalog_filter_edit)
+        filter_layout.addWidget(refresh_button)
+        left.addWidget(filter_row)
+        left.addWidget(apply_row)
+        left.addWidget(self.model_catalog_list)
+
+        splitter = QSplitter(Qt.Orientation.Horizontal)
+        list_container = QWidget()
+        list_container.setLayout(left)
+        splitter.addWidget(list_container)
+        splitter.addWidget(self.model_catalog_detail)
+        splitter.setSizes([420, 820])
+
+        page = QWidget()
+        root = QHBoxLayout(page)
+        root.addWidget(splitter)
+        return page
+
+    def _refresh_model_catalog(self) -> None:
+        from od_platform.model_catalog import list_families, list_models, recommend_model
+
+        family = self.model_catalog_family_combo.currentText()
+        family = None if family == "全部" else family
+
+        if self.model_catalog_recommend_edit.text().strip():
+            models = recommend_model(
+                self.model_catalog_recommend_edit.text().strip(),
+                family=family,
+                limit=20,
+            )
+        else:
+            models = list_models(family=family)
+
+        query = self.model_catalog_filter_edit.text().strip().lower()
+        if query:
+            models = [info for info in models if query in info.name.lower() or query in info.description.lower()]
+
+        self.model_catalog_list.clear()
+        for info in models:
+            item_text = f"{info.name}  [{info.family} {info.variant} | {info.size_category}]"
+            self.model_catalog_list.addItem(item_text)
+            self.model_catalog_list.item(self.model_catalog_list.count() - 1).setData(
+                Qt.ItemDataRole.UserRole, info.name
+            )
+        if self.model_catalog_list.count():
+            self.model_catalog_list.setCurrentRow(0)
+        else:
+            self.model_catalog_detail.setPlainText("没有匹配的模型。")
+        self._set_status("就绪", f"模型目录 {len(models)} 个")
+
+    def _show_model_catalog_item(self, item) -> None:
+        if item is None:
+            return
+        from od_platform.model_catalog import get_model_info
+
+        info = get_model_info(item.data(Qt.ItemDataRole.UserRole))
+        if info is None:
+            self.model_catalog_detail.setPlainText("无法读取模型元数据。")
+            return
+        metric_lines = "\n".join(f"{key:<12}: {value}" for key, value in info.metrics.items())
+        lines = [
+            "模型详情",
+            "=" * 60,
+            f"名称          : {info.name}",
+            f"系列          : {info.family}",
+            f"变体          : {info.variant}",
+            f"任务          : {info.task}",
+            f"后端          : {info.backend}",
+            f"尺寸档位      : {info.size_category}",
+            f"参数量        : {info.params_m} M",
+            f"CPU 耗时      : {info.speed_cpu_ms} ms",
+            "",
+            "指标",
+            "-" * 60,
+            metric_lines,
+            "",
+            "描述",
+            "-" * 60,
+            info.description,
+        ]
+        self.model_catalog_detail.setPlainText("\n".join(lines))
+
+    def _apply_model_to_train(self) -> None:
+        item = self.model_catalog_list.currentItem()
+        if item is None:
+            self._set_status("提示", "先在模型目录中选择一个模型")
+            return
+        model_name = item.data(Qt.ItemDataRole.UserRole)
+        self.train_model_edit.setText(model_name)
+        self.tabs.setCurrentIndex(self._task_tab_index())
+        self.desktop_task_combo.setCurrentText("模型训练")
+        self._set_status("就绪", f"已应用到模型训练: {model_name}")
+
+    def _apply_model_to_infer(self) -> None:
+        item = self.model_catalog_list.currentItem()
+        if item is None:
+            self._set_status("提示", "先在模型目录中选择一个模型")
+            return
+        model_name = item.data(Qt.ItemDataRole.UserRole)
+        self.model_edit.setText(model_name)
+        self.tabs.setCurrentIndex(0)  # 推理 tab
+        self._set_status("就绪", f"已应用到模型推理: {model_name}")
 
     def _build_training_tab(self) -> QWidget:
         refresh_button = QPushButton("刷新")
@@ -539,6 +714,29 @@ class MainWindow(QMainWindow):
                 ],
             )
         )
+        self.task_stack.addWidget(
+            _form_page(
+                "列出模型参数",
+                [
+                    ("模型系列", self.list_models_family_combo),
+                    ("推荐描述", self.list_models_recommend_edit),
+                    ("数量上限", self.list_models_limit_spin),
+                    ("", self.list_models_json_check),
+                    ("追加参数", self.list_models_extra_args_edit),
+                ],
+            )
+        )
+        self.task_stack.addWidget(
+            _form_page(
+                "数据标注参数",
+                [
+                    ("数据集名称", self.annotate_dataset_edit),
+                    ("类别列表", self.annotate_classes_edit),
+                    ("", self.annotate_resume_check),
+                    ("追加参数", self.annotate_extra_args_edit),
+                ],
+            )
+        )
 
         controls = QHBoxLayout()
         controls.addWidget(self.task_start_button)
@@ -587,6 +785,12 @@ class MainWindow(QMainWindow):
         self.eval_list.currentItemChanged.connect(lambda current, _previous: self._show_eval_item(current))
         self.validation_list.currentItemChanged.connect(lambda current, _previous: self._show_validation_item(current))
         self.training_list.currentItemChanged.connect(lambda current, _previous: self._show_training_item(current))
+        self.model_catalog_list.currentItemChanged.connect(lambda current, _previous: self._show_model_catalog_item(current))
+        self.model_catalog_recommend_button.clicked.connect(self._refresh_model_catalog)
+        self.model_catalog_apply_train_button.clicked.connect(self._apply_model_to_train)
+        self.model_catalog_apply_infer_button.clicked.connect(self._apply_model_to_infer)
+        self.model_catalog_filter_edit.textChanged.connect(lambda _text: self._refresh_model_catalog())
+        self.model_catalog_family_combo.currentTextChanged.connect(lambda _text: self._refresh_model_catalog())
         self.eval_filter_edit.textChanged.connect(lambda _text: self._refresh_evaluation_results())
         self.validation_filter_edit.textChanged.connect(lambda _text: self._refresh_validation_reports())
         self.training_filter_edit.textChanged.connect(lambda _text: self._refresh_training_results())
@@ -620,6 +824,11 @@ class MainWindow(QMainWindow):
             self.plot_output_edit,
             self.plot_summary_edit,
             self.plot_extra_args_edit,
+            self.list_models_recommend_edit,
+            self.list_models_extra_args_edit,
+            self.annotate_dataset_edit,
+            self.annotate_classes_edit,
+            self.annotate_extra_args_edit,
         ):
             line_edit.textChanged.connect(lambda _text: self._refresh_task_preview())
         for combo_box in (
@@ -627,12 +836,15 @@ class MainWindow(QMainWindow):
             self.transform_format_combo,
             self.transform_task_combo,
             self.validate_task_combo,
+            self.list_models_family_combo,
         ):
             combo_box.currentTextChanged.connect(lambda _text: self._refresh_task_preview())
-        for spin_box in (self.train_epochs_spin, self.train_batch_spin, self.train_workers_spin):
+        for spin_box in (self.train_epochs_spin, self.train_batch_spin, self.train_workers_spin, self.list_models_limit_spin):
             spin_box.valueChanged.connect(lambda _value: self._refresh_task_preview())
         self.import_overwrite_check.stateChanged.connect(lambda _value: self._refresh_task_preview())
         self.train_dry_run_check.stateChanged.connect(lambda _value: self._refresh_task_preview())
+        self.list_models_json_check.stateChanged.connect(lambda _value: self._refresh_task_preview())
+        self.annotate_resume_check.stateChanged.connect(lambda _value: self._refresh_task_preview())
         for check_box in (
             self.reset_dry_run_check,
             self.reset_yes_check,
@@ -645,6 +857,7 @@ class MainWindow(QMainWindow):
         self.task_stop_button.clicked.connect(self._stop_task)
         self._switch_task_page(self.desktop_task_combo.currentIndex())
         self._refresh_task_preview()
+        self._refresh_model_catalog()
 
     @Slot()
     def _start_worker(self) -> None:
@@ -977,7 +1190,51 @@ class MainWindow(QMainWindow):
                 args.append("--matplotx")
             return "od_platform.cli.plot_training", [*args, *extra_args]
 
+        if task_name == "列出模型":
+            extra_args = _split_extra_args(self.list_models_extra_args_edit.text().strip())
+            args: list[str] = []
+            family = self.list_models_family_combo.currentText()
+            if family != "全部":
+                args.extend(["--family", family])
+            recommend = self.list_models_recommend_edit.text().strip()
+            if recommend:
+                args.extend(["--recommend", recommend])
+            args.extend(["--limit", str(self.list_models_limit_spin.value())])
+            if self.list_models_json_check.isChecked():
+                args.append("--json")
+            return "od_platform.model_catalog.cli.list_models", [*args, *extra_args]
+
+        if task_name == "数据标注":
+            dataset = self.annotate_dataset_edit.text().strip()
+            classes = self.annotate_classes_edit.text().split()
+            extra_args = _split_extra_args(self.annotate_extra_args_edit.text().strip())
+            if not dataset:
+                raise ValueError("数据标注需要填写数据集名称")
+            if not classes:
+                raise ValueError("数据标注需要填写至少一个类别名")
+            args = ["--dataset", dataset, "--classes", *classes]
+            if self.annotate_resume_check.isChecked():
+                args.append("--resume")
+            return "od_platform.annotation.cli.annotate", [*args, *extra_args]
+
         raise ValueError(f"未知任务: {task_name}")
+
+    def _open_model_catalog(self) -> None:
+        """跳转到模型目录标签页并刷新。"""
+        self.tabs.setCurrentIndex(self._model_catalog_tab_index())
+        self._refresh_model_catalog()
+
+    def _model_catalog_tab_index(self) -> int:
+        for index in range(self.tabs.count()):
+            if self.tabs.tabText(index) == "模型目录":
+                return index
+        return 3  # 兜底：推理/评估/质检之后
+
+    def _task_tab_index(self) -> int:
+        for index in range(self.tabs.count()):
+            if self.tabs.tabText(index) == "任务启动":
+                return index
+        return self.tabs.count() - 1  # 兜底：最后一个 tab
 
     def _browse_model(self) -> None:
         path, _ = QFileDialog.getOpenFileName(self, "选择模型权重", str(ROOT_DIR), "PyTorch weights (*.pt);;All files (*)")

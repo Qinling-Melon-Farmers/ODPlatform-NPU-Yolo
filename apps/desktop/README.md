@@ -25,10 +25,12 @@ pip install -r apps/desktop/requirements.txt
 - 交互控制：启动、暂停、继续、停止推理，显示实时画面、FPS、检测数量、输出目录和日志。
 - 结果浏览：模型评估、数据质检、训练结果支持筛选、搜索和摘要查看。
 - 训练曲线：支持 `results.csv` 对应图表内嵌预览。
-- 任务启动：按任务类型切换独立参数页，通过后台子进程调用 `odp-import-dataset`、`odp-transform`、`odp-validate`、`odp-val`、`odp-train`、`odp-reset`、`odp-plot-training`。
+- 模型目录：内置 YOLOv5/v7/v8/v9/v10/11/12 全系列模型元数据浏览，支持系列筛选、自然语言推荐（最快/最准/平衡等），一键应用到训练或推理。
+- 任务启动：按任务类型切换独立参数页，通过后台子进程调用 `odp-import-dataset`、`odp-transform`、`odp-validate`、`odp-val`、`odp-train`、`odp-reset`、`odp-plot-training`、`odp-list-models`、`odp-annotate`。
 - 数据导入：支持在桌面端选择 `voc` 或 `yolo` zip；liftrace 这类包含 `data.yaml/images/labels` 的数据集应选择 `yolo`。
 - 项目重置：桌面端支持 `dry-run`、`--backup`、`--yes`、`--force` 开关；默认 dry-run，避免误删运行产物。
 - 训练曲线生成：桌面端可选择 `results.csv`，调用 `odp-plot-training` 生成训练曲线 PNG 和 summary JSON。
+- 数据标注：调用 `odp-annotate` 打开 OpenCV 交互式标注窗口，支持类别列表与断点恢复（`--resume`）。
 
 训练任务默认 dry-run，避免在桌面端误触发长时间训练。
 
