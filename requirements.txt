@@ -1,8 +1,8 @@
 # ODPlatform quick-start dependencies.
 #
-# Generated from pipreqs import scan plus apps/platform/pyproject.toml and
-# apps/desktop/requirements.txt. The platform package metadata remains the
-# authoritative dependency declaration for packaging.
+# 从属关系: 本文件由 apps/platform/pyproject.toml（权威声明）与
+# apps/desktop/requirements.txt 聚合生成，仅用于快速安装。
+# 新增依赖请优先更新权威声明，避免两套依赖漂移。
 
 colorlog>=6.10.1
 matplotlib>=3.8.0

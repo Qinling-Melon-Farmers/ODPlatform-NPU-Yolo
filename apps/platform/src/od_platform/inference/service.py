@@ -6,7 +6,6 @@ import json
 import logging
 import re
 import shutil
-import sys
 from argparse import Namespace
 from dataclasses import dataclass
 from datetime import datetime
@@ -15,7 +14,7 @@ from time import perf_counter
 from typing import Any
 
 from od_platform.common import paths
-from od_platform.common.logging_utils import build_console_formatter, build_file_formatter
+from od_platform.common.logging_utils import configure_run_logger
 from od_platform.common.refs import resolve_model
 from od_platform.common.string_utils import model_slug
 from od_platform.common.system_utils import get_basic_device_info
@@ -108,7 +107,7 @@ def run_inference(
         raise ValueError("inference source is required")
 
     plan = build_inference_run_plan(config)
-    run_logger = _configure_inference_logger(plan.log_file)
+    run_logger = configure_run_logger(plan.log_file, logger_prefix="od_platform.inference")
     model_ref = resolve_model(config.model)
     source_ref = resolve_source(config.source)
 
@@ -199,7 +198,7 @@ class InferService:
 
             plan = build_inference_run_plan(config)
             output_dir = plan.source_run_dir
-            run_logger = _configure_inference_logger(plan.log_file)
+            run_logger = configure_run_logger(plan.log_file, logger_prefix="od_platform.inference")
             log_path = plan.log_file
             pipe_config = load_pipeline_config(pipeline_yaml)
             model_ref = resolve_model(config.model)
@@ -488,20 +487,6 @@ def _next_inference_sequence(task: str) -> int:
     return max(numbers, default=0) + 1
 
 
-def _configure_inference_logger(log_file: Path) -> logging.Logger:
-    log_file.parent.mkdir(parents=True, exist_ok=True)
-    run_logger = logging.getLogger(f"od_platform.inference.{log_file.stem}")
-    run_logger.handlers.clear()
-    run_logger.setLevel(logging.INFO)
-    run_logger.propagate = False
-    file_formatter = build_file_formatter("%(asctime)s - %(levelname)-8s - %(name)s - %(message)s")
-    file_handler = logging.FileHandler(log_file, encoding="utf-8")
-    file_handler.setFormatter(file_formatter)
-    run_logger.addHandler(file_handler)
-    stream_handler = logging.StreamHandler(sys.stdout)
-    stream_handler.setFormatter(build_console_formatter())
-    run_logger.addHandler(stream_handler)
-    return run_logger
 
 
 def _log_effective_config(config: YOLOInferConfig, target_logger: logging.Logger, *, config_source: Path | None) -> None:

@@ -6,7 +6,6 @@ import json
 import logging
 import re
 import shutil
-import sys
 from dataclasses import dataclass, replace
 from datetime import datetime
 from pathlib import Path
@@ -16,7 +15,7 @@ from typing import Any
 import yaml
 
 from od_platform.common import paths
-from od_platform.common.logging_utils import build_console_formatter, build_file_formatter
+from od_platform.common.logging_utils import configure_run_logger
 from od_platform.common.refs import resolve_model, resolve_yaml
 from od_platform.common.string_utils import model_slug, pad_to_width
 from od_platform.common.system_utils import get_basic_device_info
@@ -89,7 +88,7 @@ def run_training(
 ) -> TrainingRunResult:
     """Run or dry-run YOLO training with audit logs and post-run archiving."""
     plan = build_training_run_plan(config)
-    run_logger = _configure_training_logger(plan.log_file)
+    run_logger = configure_run_logger(plan.log_file, logger_prefix="od_platform.training")
     dataset_yaml = resolve_yaml(config.data)
     model_ref = resolve_model(config.model)
     dataset_summary = summarize_dataset(dataset_yaml)
@@ -356,22 +355,6 @@ def _result_run_dir_candidates(train_result: Any) -> list[Path]:
 
 def _has_training_artifacts(run_dir: Path) -> bool:
     return (run_dir / "results.csv").exists() or (run_dir / "weights" / "best.pt").exists()
-
-
-def _configure_training_logger(log_file: Path) -> logging.Logger:
-    log_file.parent.mkdir(parents=True, exist_ok=True)
-    run_logger = logging.getLogger(f"od_platform.training.{log_file.stem}")
-    run_logger.handlers.clear()
-    run_logger.setLevel(logging.INFO)
-    run_logger.propagate = False
-    file_formatter = build_file_formatter("%(asctime)s - %(levelname)-8s - %(name)s - %(message)s")
-    file_handler = logging.FileHandler(log_file, encoding="utf-8")
-    file_handler.setFormatter(file_formatter)
-    run_logger.addHandler(file_handler)
-    stream_handler = logging.StreamHandler(sys.stdout)
-    stream_handler.setFormatter(build_console_formatter())
-    run_logger.addHandler(stream_handler)
-    return run_logger
 
 
 def _log_effective_config(config: YOLOTrainConfig, target_logger: logging.Logger, *, config_source: Path | None) -> None:

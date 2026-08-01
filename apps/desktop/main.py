@@ -1294,8 +1294,10 @@ class MainWindow(QMainWindow):
         self._agent_thread.started.connect(self._agent_worker.run)
         self._agent_worker.event_ready.connect(self._on_agent_event)
         self._agent_worker.completed.connect(self._finish_agent)
+        self._agent_worker.cancelled.connect(self._cancel_agent)
         self._agent_worker.failed.connect(self._fail_agent)
         self._agent_worker.completed.connect(self._agent_thread.quit)
+        self._agent_worker.cancelled.connect(self._agent_thread.quit)
         self._agent_worker.failed.connect(self._agent_thread.quit)
         self._agent_thread.finished.connect(self._cleanup_agent_thread)
         self._agent_thread.start()
@@ -1329,6 +1331,11 @@ class MainWindow(QMainWindow):
         if final_text:
             self.agent_output.append(f"🤖 {final_text}")
         self._set_status("完成", "AI 助手对话完成")
+
+    @Slot()
+    def _cancel_agent(self) -> None:
+        self.agent_output.append("⏹ 已取消")
+        self._set_status("已取消", "AI 助手对话已取消")
 
     @Slot(str)
     def _fail_agent(self, message: str) -> None:

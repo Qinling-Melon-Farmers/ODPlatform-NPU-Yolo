@@ -15,11 +15,13 @@ class AgentWorker(QObject):
     Signals:
         event_ready: 一个 AgentEvent（message/tool_start/tool_result/error/done）。
         completed:   最终回答文本（对话自然结束）。
+        cancelled:   用户主动取消（与 failed 区分）。
         failed:      致命错误信息（API 配置错误等）。
     """
 
     event_ready = Signal(object)
     completed = Signal(str)
+    cancelled = Signal()
     failed = Signal(str)
 
     def __init__(
@@ -58,7 +60,7 @@ class AgentWorker(QObject):
             final_text = ""
             for event in orchestrator.run_stream(self._message):
                 if self._cancelled:
-                    self.failed.emit("已取消")
+                    self.cancelled.emit()
                     return
                 self.event_ready.emit(event)
                 if event.kind == "done":

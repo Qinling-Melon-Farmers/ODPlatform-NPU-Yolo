@@ -128,8 +128,10 @@ class AgentOrchestrator:
                 yield AgentEvent(kind="error", content=str(exc))
                 return
 
-            choice = response["choices"][0]
-            assistant_message = choice["message"]
+            choices = response.get("choices") or []
+            if not choices:
+                raise APIError(0, "API 返回畸形响应: 缺少 choices")
+            assistant_message = choices[0].get("message") or {}
             # 规范化 content（个别严格实现要求 assistant 消息 content 为字符串）
             messages.append({**assistant_message, "content": assistant_message.get("content") or ""})
 
@@ -178,7 +180,11 @@ class AgentOrchestrator:
                 logger.error("Agent 总结轮 API 调用失败: %s", exc)
                 yield AgentEvent(kind="error", content=str(exc))
                 return
-            final_text = response["choices"][0]["message"].get("content") or "（模型未返回总结文本）"
+            choices = response.get("choices") or []
+            if not choices:
+                yield AgentEvent(kind="error", content="API 返回畸形响应: 缺少 choices")
+                return
+            final_text = (choices[0].get("message") or {}).get("content") or "（模型未返回总结文本）"
             yield AgentEvent(kind="message", content=final_text)
 
         yield AgentEvent(kind="done", content=final_text)

@@ -28,12 +28,13 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--classes", nargs="+", required=True, metavar="NAME", help="类别名称列表，index 即类别 ID")
     parser.add_argument("--images-dir", type=Path, help="图片目录（默认 data/raw/<dataset>/images）")
     parser.add_argument("--labels-dir", type=Path, help="标注输出目录（默认 data/raw/<dataset>/annotations）")
-    parser.add_argument(
+    mode = parser.add_mutually_exclusive_group()
+    mode.add_argument(
         "--resume",
         action="store_true",
         help="继续中断的会话（默认即跳过已标注图片，此参数为显式语义提示）",
     )
-    parser.add_argument(
+    mode.add_argument(
         "--edit",
         action="store_true",
         help="编辑模式：遍历全部图片（含已标注），加载已有标注供精修（如 VLM 预标注后人工修正）",

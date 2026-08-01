@@ -87,6 +87,31 @@ def build_console_formatter() -> ColoredFormatter:
     )
 
 
+def configure_run_logger(log_file: Path, *, logger_prefix: str) -> logging.Logger:
+    """配置一个运行日志器：文件 + 控制台双输出，独立于根 logger。
+
+    Args:
+        log_file:       日志文件路径（自动建父目录）。
+        logger_prefix:  logger 名称前缀，如 ``od_platform.training``。
+
+    Returns:
+        已配置的命名 logger（propagate=False，不污染根 logger）。
+    """
+    log_file.parent.mkdir(parents=True, exist_ok=True)
+    run_logger = logging.getLogger(f"{logger_prefix}.{log_file.stem}")
+    run_logger.handlers.clear()
+    run_logger.setLevel(logging.INFO)
+    run_logger.propagate = False
+    file_formatter = build_file_formatter("%(asctime)s - %(levelname)-8s - %(name)s - %(message)s")
+    file_handler = logging.FileHandler(log_file, encoding="utf-8")
+    file_handler.setFormatter(file_formatter)
+    run_logger.addHandler(file_handler)
+    stream_handler = logging.StreamHandler(sys.stdout)
+    stream_handler.setFormatter(build_console_formatter())
+    run_logger.addHandler(stream_handler)
+    return run_logger
+
+
 def get_logger(
     base_path: Path,
     log_type: str = "general",
