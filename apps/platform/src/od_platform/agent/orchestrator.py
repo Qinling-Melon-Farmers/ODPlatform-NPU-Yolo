@@ -17,6 +17,7 @@ from dataclasses import dataclass
 from typing import Any
 
 from od_platform.agent.client import APIError, OpenAIClient
+from od_platform.agent.session import AgentSession
 from od_platform.agent.tools import ToolRegistry, ToolResult
 
 logger = logging.getLogger(__name__)
@@ -86,6 +87,8 @@ class AgentOrchestrator:
         registry:      工具注册表。
         config:        运行配置。
         system_prompt: 系统提示词（默认使用内置中文提示）。
+        session:       可选的会话对象；提供时每轮对话持久化到会话
+                       （多轮记忆），缺省为单轮模式（每次重建消息）。
     """
 
     def __init__(
@@ -95,11 +98,13 @@ class AgentOrchestrator:
         registry: ToolRegistry,
         config: AgentConfig,
         system_prompt: str = SYSTEM_PROMPT,
+        session: AgentSession | None = None,
     ) -> None:
         self.client = client
         self.registry = registry
         self.config = config
         self.system_prompt = system_prompt
+        self.session = session
 
     def run(self, user_message: str) -> list[AgentEvent]:
         """阻塞式执行一轮对话，返回全部事件。"""
@@ -108,13 +113,24 @@ class AgentOrchestrator:
     def run_stream(self, user_message: str) -> Iterator[AgentEvent]:
         """流式执行一轮对话。
 
+        提供 ``session`` 时：本轮消息（用户输入、工具调用与观察、
+        最终回答）全部持久化到会话，下一轮可引用历史。
+
         Yields:
             按发生顺序的事件；最终以 ``done`` 事件结束（携带最终文本）。
         """
-        messages: list[dict[str, Any]] = [
-            {"role": "system", "content": self.system_prompt},
-            {"role": "user", "content": user_message},
-        ]
+        if self.session is not None:
+            history = self.session.to_history()
+            if not history or history[0].get("role") != "system":
+                history.insert(0, {"role": "system", "content": self.system_prompt})
+            messages: list[dict[str, Any]] = [*history, {"role": "user", "content": user_message}]
+            start_index = len(history)
+        else:
+            messages = [
+                {"role": "system", "content": self.system_prompt},
+                {"role": "user", "content": user_message},
+            ]
+            start_index = 1
 
         final_text = ""
         for _iteration in range(self.config.max_iterations):
@@ -186,7 +202,14 @@ class AgentOrchestrator:
             if not choices:
                 yield AgentEvent(kind="error", content="API 返回畸形响应: 缺少 choices")
                 return
-            final_text = (choices[0].get("message") or {}).get("content") or "（模型未返回总结文本）"
+            summary_message = choices[0].get("message") or {}
+            final_text = summary_message.get("content") or "（模型未返回总结文本）"
+            messages.append({**summary_message, "content": final_text})
             yield AgentEvent(kind="message", content=final_text)
+
+        if self.session is not None:
+            for message in messages[start_index:]:
+                self.session.append(message)
+            self.session.save()
 
         yield AgentEvent(kind="done", content=final_text)

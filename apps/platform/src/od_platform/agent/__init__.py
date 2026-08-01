@@ -14,6 +14,7 @@ from od_platform.agent.client import (
     image_url_content_part,
 )
 from od_platform.agent.orchestrator import SYSTEM_PROMPT, AgentConfig, AgentEvent, AgentOrchestrator
+from od_platform.agent.session import AgentSession, latest_session, list_sessions
 from od_platform.agent.tools import ToolRegistry, ToolResult, build_default_registry
 
 __all__ = [
@@ -22,10 +23,13 @@ __all__ = [
     "AgentConfig",
     "AgentEvent",
     "AgentOrchestrator",
+    "AgentSession",
     "OpenAIClient",
     "ToolRegistry",
     "ToolResult",
     "build_default_registry",
     "encode_image_base64",
     "image_url_content_part",
+    "latest_session",
+    "list_sessions",
 ]
