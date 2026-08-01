@@ -64,7 +64,9 @@ def _scan_weight_names(base_dir: Path, *, recursive: bool) -> list[str]:
         return []
     if recursive:
         candidates = sorted(
-            path for suffix in _WEIGHT_SUFFIXES for path in base_dir.rglob(f"*{suffix}")
+            path
+            for path in base_dir.rglob("*")
+            if path.is_file() and path.suffix.lower() in _WEIGHT_SUFFIXES
         )
     else:
         candidates = [path for path in sorted(base_dir.iterdir()) if path.suffix.lower() in _WEIGHT_SUFFIXES]
