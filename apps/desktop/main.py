@@ -49,6 +49,7 @@ except ImportError as exc:  # pragma: no cover - optional desktop dependencies.
     )
     raise SystemExit(2) from exc
 
+from agent_worker import AgentWorker  # noqa: E402
 from infer_worker import InferWorker  # noqa: E402
 from task_worker import CommandWorker  # noqa: E402
 
@@ -64,6 +65,8 @@ class MainWindow(QMainWindow):
         self._worker: InferWorker | None = None
         self._task_thread: QThread | None = None
         self._task_worker: CommandWorker | None = None
+        self._agent_thread: QThread | None = None
+        self._agent_worker: AgentWorker | None = None
         self._last_output_dir: Path | None = None
         self._training_plots: list[Path] = []
         self._training_plot_index = 0
@@ -293,6 +296,28 @@ class MainWindow(QMainWindow):
         self.ai_task_extra_args_edit = QLineEdit("")
         self.ai_task_extra_args_edit.setPlaceholderText("追加 CLI 参数")
 
+        self.agent_input = QTextEdit()
+        self.agent_input.setPlaceholderText("用自然语言描述目标检测任务，如：用最快的模型训练 rsod 数据集")
+        self.agent_input.setMaximumHeight(90)
+        self.agent_output = QTextEdit()
+        self.agent_output.setReadOnly(True)
+        self.agent_send_button = QPushButton("发送")
+        self.agent_send_button.setProperty("primary", True)
+        self.agent_stop_button = QPushButton("停止")
+        self.agent_stop_button.setEnabled(False)
+        self.agent_base_url_edit = QLineEdit("")
+        self.agent_base_url_edit.setPlaceholderText("OpenAI 兼容 API 地址（必填），如 https://api.deepseek.com/v1")
+        self.agent_model_edit = QLineEdit("")
+        self.agent_model_edit.setPlaceholderText("模型名（必填），如 deepseek-chat")
+        self.agent_api_key_edit = QLineEdit("")
+        self.agent_api_key_edit.setEchoMode(QLineEdit.EchoMode.Password)
+        self.agent_api_key_edit.setPlaceholderText("API 密钥；留空读环境变量 OPENAI_API_KEY")
+        self.agent_max_iterations_spin = QSpinBox()
+        self.agent_max_iterations_spin.setRange(1, 100)
+        self.agent_max_iterations_spin.setValue(8)
+        self.agent_dry_run_check = QCheckBox("安全模式：训练/推理以计划模式执行")
+        self.agent_dry_run_check.setChecked(True)
+
         self.task_command_preview = QTextEdit()
         self.task_command_preview.setReadOnly(True)
         self.task_command_preview.setMaximumHeight(100)
@@ -344,6 +369,7 @@ class MainWindow(QMainWindow):
             ),
             "数据质检",
         )
+        tabs.addTab(self._build_agent_tab(), "AI 助手")
         tabs.addTab(self._build_model_catalog_tab(), "模型目录")
         tabs.addTab(self._build_training_tab(), "训练结果")
         tabs.addTab(self._build_tasks_tab(), "任务启动")
@@ -474,6 +500,57 @@ class MainWindow(QMainWindow):
         splitter.addWidget(list_container)
         splitter.addWidget(detail_widget)
         splitter.setSizes([420, 820])
+
+        page = QWidget()
+        root = QHBoxLayout(page)
+        root.addWidget(splitter)
+        return page
+
+    def _build_agent_tab(self) -> QWidget:
+        title_label = QLabel("AI 助手")
+        title_label.setObjectName("SectionTitle")
+        hint_label = QLabel("用自然语言驱动平台执行目标检测任务（Agent 工具编排）。")
+        hint_label.setObjectName("HintText")
+
+        config_group = QGroupBox("API 配置")
+        config_form = QFormLayout(config_group)
+        config_form.addRow("API 地址", self.agent_base_url_edit)
+        config_form.addRow("模型名", self.agent_model_edit)
+        config_form.addRow("API 密钥", self.agent_api_key_edit)
+        config_row = QWidget()
+        config_row_layout = QHBoxLayout(config_row)
+        config_row_layout.setContentsMargins(0, 0, 0, 0)
+        config_row_layout.addWidget(self.agent_max_iterations_spin)
+        config_row_layout.addWidget(self.agent_dry_run_check)
+        config_form.addRow("迭代上限", config_row)
+
+        controls = QHBoxLayout()
+        controls.addWidget(self.agent_send_button)
+        controls.addWidget(self.agent_stop_button)
+        controls.addStretch(1)
+
+        left = QVBoxLayout()
+        left.addWidget(title_label)
+        left.addWidget(hint_label)
+        left.addWidget(config_group)
+        left.addWidget(QLabel("输入任务"))
+        left.addWidget(self.agent_input)
+        left.addLayout(controls)
+
+        right = QVBoxLayout()
+        output_title = QLabel("对话输出")
+        output_title.setObjectName("SectionTitle")
+        right.addWidget(output_title)
+        right.addWidget(self.agent_output)
+
+        splitter = QSplitter(Qt.Orientation.Horizontal)
+        left_container = QWidget()
+        left_container.setLayout(left)
+        right_container = QWidget()
+        right_container.setLayout(right)
+        splitter.addWidget(left_container)
+        splitter.addWidget(right_container)
+        splitter.setSizes([480, 780])
 
         page = QWidget()
         root = QHBoxLayout(page)
@@ -961,6 +1038,8 @@ class MainWindow(QMainWindow):
             check_box.stateChanged.connect(lambda _value: self._refresh_task_preview())
         self.task_start_button.clicked.connect(self._start_task)
         self.task_stop_button.clicked.connect(self._stop_task)
+        self.agent_send_button.clicked.connect(self._start_agent)
+        self.agent_stop_button.clicked.connect(self._stop_agent)
         self._switch_task_page(self.desktop_task_combo.currentIndex())
         self._refresh_task_preview()
         self._refresh_model_catalog()
@@ -1157,6 +1236,92 @@ class MainWindow(QMainWindow):
         self.task_start_button.setEnabled(True)
         self.task_stop_button.setEnabled(False)
         self._refresh_all_result_tabs()
+
+    @Slot()
+    def _start_agent(self) -> None:
+        """启动一轮 Agent 对话（QThread 后台执行）。"""
+        if self._agent_thread is not None:
+            return
+        message = self.agent_input.toPlainText().strip()
+        base_url = self.agent_base_url_edit.text().strip()
+        model = self.agent_model_edit.text().strip()
+        api_key = self.agent_api_key_edit.text().strip() or None
+        if not message:
+            self._set_status("提示", "请输入任务描述")
+            return
+        if not base_url or not model:
+            self._set_status("提示", "请填写 API 地址与模型名")
+            return
+
+        self.agent_output.append(f"> {message}")
+        self.agent_send_button.setEnabled(False)
+        self.agent_stop_button.setEnabled(True)
+        self._set_status("运行中", f"AI 助手: {model}")
+
+        self._agent_thread = QThread(self)
+        self._agent_worker = AgentWorker(
+            model=model,
+            api_key=api_key,
+            base_url=base_url,
+            message=message,
+            max_iterations=self.agent_max_iterations_spin.value(),
+            dry_run=self.agent_dry_run_check.isChecked(),
+        )
+        self._agent_worker.moveToThread(self._agent_thread)
+        self._agent_thread.started.connect(self._agent_worker.run)
+        self._agent_worker.event_ready.connect(self._on_agent_event)
+        self._agent_worker.completed.connect(self._finish_agent)
+        self._agent_worker.failed.connect(self._fail_agent)
+        self._agent_worker.completed.connect(self._agent_thread.quit)
+        self._agent_worker.failed.connect(self._agent_thread.quit)
+        self._agent_thread.finished.connect(self._cleanup_agent_thread)
+        self._agent_thread.start()
+
+    @Slot()
+    def _stop_agent(self) -> None:
+        if self._agent_worker is not None:
+            self._agent_worker.cancel()
+            self._set_status("停止中", "正在停止 AI 助手")
+
+    @Slot(object)
+    def _on_agent_event(self, event: object) -> None:
+        """渲染 AgentEvent（message/tool_start/tool_result/error/done）。"""
+        kind = getattr(event, "kind", "")
+        content = getattr(event, "content", None)
+        if kind == "message" and content:
+            self.agent_output.append(f"🤖 {content}")
+        elif kind == "tool_start":
+            self.agent_output.append(f"→ 调用工具 {event.tool_name}({content or ''})")
+        elif kind == "tool_result" and event.tool_result is not None:
+            status = "成功" if event.tool_result.ok else "失败"
+            summary = (event.tool_result.summary or "")[:200]
+            self.agent_output.append(f"← {event.tool_name} {status}: {summary}")
+        elif kind == "error":
+            self.agent_output.append(f"❌ 错误: {content}")
+        elif kind == "done":
+            self.agent_output.append("── 完成 ──")
+
+    @Slot(str)
+    def _finish_agent(self, final_text: str) -> None:
+        if final_text:
+            self.agent_output.append(f"🤖 {final_text}")
+        self._set_status("完成", "AI 助手对话完成")
+
+    @Slot(str)
+    def _fail_agent(self, message: str) -> None:
+        self.agent_output.append(f"❌ 失败: {message}")
+        self._set_status("失败", message)
+
+    @Slot()
+    def _cleanup_agent_thread(self) -> None:
+        if self._agent_worker is not None:
+            self._agent_worker.deleteLater()
+        if self._agent_thread is not None:
+            self._agent_thread.deleteLater()
+        self._agent_worker = None
+        self._agent_thread = None
+        self.agent_send_button.setEnabled(True)
+        self.agent_stop_button.setEnabled(False)
 
     def _refresh_task_preview(self) -> None:
         try:
