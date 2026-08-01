@@ -95,6 +95,17 @@ class TestParseBoxes(unittest.TestCase):
         self.assertAlmostEqual(boxes[0].y_center, 0.0)
         self.assertAlmostEqual(boxes[0].width, 1.0)
 
+    def test_parse_respects_max_boxes(self) -> None:
+        payload = {
+            "boxes": [
+                {"class_id": 0, "x_center": 0.1, "y_center": 0.1, "width": 0.1, "height": 0.1},
+                {"class_id": 0, "x_center": 0.2, "y_center": 0.2, "width": 0.1, "height": 0.1},
+                {"class_id": 0, "x_center": 0.3, "y_center": 0.3, "width": 0.1, "height": 0.1},
+            ]
+        }
+        boxes, _discarded = parse_vlm_boxes(payload, classes=["a"], max_boxes=2)
+        self.assertEqual(len(boxes), 2)
+
 
 class TestAnnotateImage(unittest.TestCase):
     def _make_image(self, root: Path, name: str = "img.jpg") -> Path:

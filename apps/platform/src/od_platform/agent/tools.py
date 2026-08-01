@@ -276,7 +276,12 @@ class _CliOutput:
 
 
 def _run_cli(module: str, entry: str, argv: list[str], *, executor: str) -> _CliOutput:
-    """进程内调用 CLI 模块入口，捕获日志输出与退出码。"""
+    """进程内调用 CLI 模块入口，捕获日志输出与退出码。
+
+    前提：CLI 内部使用命名 logger（``get_logger(logger_name=...)``）而非
+    直接配置 root logger，否则临时挂载的捕获 handler 会被覆盖/污染。
+    当前平台全部 CLI 均符合该约定。
+    """
     module_obj = importlib.import_module(module)
     main_func = getattr(module_obj, entry)
 

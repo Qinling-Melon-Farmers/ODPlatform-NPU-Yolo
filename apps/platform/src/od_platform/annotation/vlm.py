@@ -153,12 +153,18 @@ def extract_json_object(text: str) -> dict | None:
     return None
 
 
-def parse_vlm_boxes(payload: dict, *, classes: list[str]) -> tuple[list[BBox], int]:
+def parse_vlm_boxes(
+    payload: dict,
+    *,
+    classes: list[str],
+    max_boxes: int = 100,
+) -> tuple[list[BBox], int]:
     """校验并转换 VLM 输出的 boxes 为 BBox 列表。
 
     Args:
-        payload:   VLM 返回的 JSON dict。
-        classes:   类别名称列表（索引即 class_id）。
+        payload:    VLM 返回的 JSON dict。
+        classes:    类别名称列表（索引即 class_id）。
+        max_boxes:  单图最大框数上限（防异常输出）。
 
     Returns:
         (有效 BBox 列表, 被丢弃条目数)。非法条目（class_id 越界/非数值/
@@ -170,7 +176,7 @@ def parse_vlm_boxes(payload: dict, *, classes: list[str]) -> tuple[list[BBox], i
 
     boxes: list[BBox] = []
     discarded = 0
-    for raw in raw_boxes[: _limit_box_count(payload)]:
+    for raw in raw_boxes[:max_boxes]:
         if not isinstance(raw, dict):
             discarded += 1
             continue
@@ -192,14 +198,6 @@ def parse_vlm_boxes(payload: dict, *, classes: list[str]) -> tuple[list[BBox], i
             continue
         boxes.append(box)
     return boxes, discarded
-
-
-def _limit_box_count(payload: dict) -> int:
-    """框数上限（VLMConfig.max_boxes 由调用方透传为 payload 元信息）。"""
-    max_boxes = payload.get("_max_boxes")
-    if isinstance(max_boxes, int) and max_boxes > 0:
-        return max_boxes
-    return 100
 
 
 def _clamp01(value: float) -> float:
@@ -250,10 +248,7 @@ def annotate_image_with_vlm(
         last_text = response["choices"][0]["message"].get("content") or ""
         payload = extract_json_object(last_text)
         if payload is not None:
-            boxes, discarded = parse_vlm_boxes(
-                {**payload, "_max_boxes": config.max_boxes},
-                classes=classes,
-            )
+            boxes, discarded = parse_vlm_boxes(payload, classes=classes, max_boxes=config.max_boxes)
             if discarded:
                 logger.debug("图片 %s 丢弃 %d 条非法框", image_path.name, discarded)
             return boxes

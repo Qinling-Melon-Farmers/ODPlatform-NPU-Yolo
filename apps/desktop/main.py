@@ -290,8 +290,6 @@ class MainWindow(QMainWindow):
         self.ai_task_api_key_edit = QLineEdit("")
         self.ai_task_api_key_edit.setEchoMode(QLineEdit.EchoMode.Password)
         self.ai_task_api_key_edit.setPlaceholderText("API 密钥；留空读环境变量 OPENAI_API_KEY")
-        self.ai_task_dry_run_check = QCheckBox("dry-run：训练/推理以计划模式执行")
-        self.ai_task_dry_run_check.setChecked(True)
         self.ai_task_extra_args_edit = QLineEdit("")
         self.ai_task_extra_args_edit.setPlaceholderText("追加 CLI 参数")
 
@@ -822,7 +820,6 @@ class MainWindow(QMainWindow):
                     ("API 地址", self.ai_task_base_url_edit),
                     ("模型名", self.ai_task_model_edit),
                     ("API 密钥", self.ai_task_api_key_edit),
-                    ("", self.ai_task_dry_run_check),
                     ("追加参数", self.ai_task_extra_args_edit),
                 ],
             )
@@ -954,7 +951,6 @@ class MainWindow(QMainWindow):
         self.list_models_json_check.stateChanged.connect(lambda _value: self._refresh_task_preview())
         self.annotate_resume_check.stateChanged.connect(lambda _value: self._refresh_task_preview())
         self.auto_annotate_dry_run_check.stateChanged.connect(lambda _value: self._refresh_task_preview())
-        self.ai_task_dry_run_check.stateChanged.connect(lambda _value: self._refresh_task_preview())
         for check_box in (
             self.reset_dry_run_check,
             self.reset_yes_check,
@@ -1166,6 +1162,10 @@ class MainWindow(QMainWindow):
         try:
             module, args = self._build_task_command()
             command = " ".join([sys.executable, "-m", module, *args])
+            # 密钥脱敏：避免命令预览/截图泄露 API Key
+            for secret in (self.auto_annotate_api_key_edit.text(), self.ai_task_api_key_edit.text()):
+                if secret:
+                    command = command.replace(secret, "***")
         except ValueError as exc:
             command = f"参数待补全: {exc}"
         self.task_command_preview.setPlainText(command)

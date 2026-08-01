@@ -14,7 +14,7 @@ class FakeClient:
         self.calls: list[dict] = []
 
     def chat(self, messages, *, model, tools=None, temperature=0.0, **kwargs) -> dict:
-        self.calls.append({"model": model, "tools": tools})
+        self.calls.append({"model": model, "tools": tools, "messages": messages})
         response = self.responses.pop(0)
         if isinstance(response, Exception):
             raise response
@@ -109,6 +109,22 @@ class TestAgentOrchestrator(unittest.TestCase):
         events = _make_orchestrator(client).run("测试")
         self.assertEqual(events[0].kind, "error")
         self.assertIn("限流", events[0].content or "")
+
+    def test_assistant_message_content_normalized(self) -> None:
+        """带 tool_calls 的 assistant 消息 content=None 应规范化为空字符串。"""
+        client = FakeClient(
+            [
+                _tool_response([{"id": "c1", "function": {"name": "no-such-tool", "arguments": "{}"}}]),
+                _text_response("完成"),
+            ]
+        )
+        _make_orchestrator(client).run("执行")
+        # 第二轮请求的 messages 中 assistant 消息 content 必须为字符串
+        second_call = client.calls[1]
+        assistant_msg = next(
+            msg for msg in second_call["messages"] if msg.get("role") == "assistant" and msg.get("tool_calls")
+        )
+        self.assertEqual(assistant_msg["content"], "")
 
     def test_invalid_tool_arguments_treated_as_empty(self) -> None:
         registry = ToolRegistry()

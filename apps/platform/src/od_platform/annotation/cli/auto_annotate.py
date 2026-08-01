@@ -27,7 +27,10 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--dataset", required=True, help="数据集名称，定位 data/raw/<dataset>/")
     parser.add_argument("--classes", nargs="+", required=True, metavar="NAME", help="类别名称列表，index 即类别 ID")
     parser.add_argument("--prompt", default="框出所有目标", help="自然语言标注指令（默认: 框出所有目标）")
-    parser.add_argument("--base-url", required=True, help="OpenAI 兼容 API 基地址（如 DashScope/Qwen 兼容端点）")
+    parser.add_argument(
+        "--base-url",
+        help="OpenAI 兼容 API 基地址（如 DashScope/Qwen 兼容端点）；缺省读环境变量 OPENAI_BASE_URL",
+    )
     parser.add_argument("--model", required=True, help=f"视觉模型名（如 {VLM_MODEL_HINTS}）")
     parser.add_argument("--api-key", help="API 密钥；缺省读环境变量 OPENAI_API_KEY")
     parser.add_argument("--images-dir", type=Path, help="图片目录（默认 data/raw/<dataset>/images）")

@@ -17,6 +17,66 @@ class TestAutoAnnotateCli(unittest.TestCase):
             auto_annotate_main(["--dataset", "demo", "--classes", "aircraft"])
         self.assertEqual(ctx.exception.code, 2)
 
+    def test_main_base_url_from_environment(self) -> None:
+        """--base-url 缺省时从 OPENAI_BASE_URL 兜底（Agent 调用路径）。"""
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            images_dir = root / "images"
+            labels_dir = root / "annotations"
+            images_dir.mkdir(parents=True)
+            labels_dir.mkdir(parents=True)
+            (images_dir / "a.jpg").write_bytes(b"img")
+
+            with patch.dict("os.environ", {"OPENAI_BASE_URL": "https://env.example.com/v1"}, clear=False):
+                with patch("od_platform.annotation.cli.auto_annotate.run_vlm_annotation") as fake_run:
+                    code = auto_annotate_main(
+                        [
+                            "--dataset",
+                            "demo",
+                            "--classes",
+                            "aircraft",
+                            "--model",
+                            "qwen-vl-max",
+                            "--images-dir",
+                            str(images_dir),
+                            "--labels-dir",
+                            str(labels_dir),
+                            "--dry-run",
+                        ]
+                    )
+            self.assertEqual(code, 0)
+            self.assertEqual(fake_run.call_args.kwargs["config"].base_url, None)  # client 层读环境变量
+
+    def test_main_no_base_url_no_env_exits_tool_error(self) -> None:
+        """--base-url 与环境变量都缺失时，dry-run 也走失败路径（client 构造抛 ValueError）。"""
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            images_dir = root / "images"
+            labels_dir = root / "annotations"
+            images_dir.mkdir(parents=True)
+            labels_dir.mkdir(parents=True)
+            (images_dir / "a.jpg").write_bytes(b"img")
+
+            with patch.dict("os.environ", {}, clear=True):
+                with patch("od_platform.annotation.cli.auto_annotate.run_vlm_annotation") as fake_run:
+                    fake_run.side_effect = ValueError("缺少 API 基地址")
+                    code = auto_annotate_main(
+                        [
+                            "--dataset",
+                            "demo",
+                            "--classes",
+                            "aircraft",
+                            "--model",
+                            "qwen-vl-max",
+                            "--images-dir",
+                            str(images_dir),
+                            "--labels-dir",
+                            str(labels_dir),
+                            "--dry-run",
+                        ]
+                    )
+            self.assertEqual(code, 2)
+
     def test_main_dry_run_exits_zero_no_api_call(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             root = Path(temp_dir)

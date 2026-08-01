@@ -238,7 +238,9 @@ def _type_name(type_func: Any) -> str:
     return type(type_func).__name__
 
 
-#: 默认注册的 CLI 模块清单（tools.py 的默认注册表与此一致）。
+#: 默认 CLI 模块清单——仅供 ``build_all_tool_schemas`` 批量自省使用。
+#: 注意：``build_default_registry``（tools.py）维护自己的注册表
+#: （服务层工具 + CLI 工具），两处清单各自独立，新增 CLI 需同步。
 DEFAULT_CLI_MODULES: list[str] = [
     "od_platform.cli.init_project",
     "od_platform.cli.import_dataset",

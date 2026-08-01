@@ -130,7 +130,8 @@ class AgentOrchestrator:
 
             choice = response["choices"][0]
             assistant_message = choice["message"]
-            messages.append(assistant_message)
+            # 规范化 content（个别严格实现要求 assistant 消息 content 为字符串）
+            messages.append({**assistant_message, "content": assistant_message.get("content") or ""})
 
             tool_calls = assistant_message.get("tool_calls") or []
             if not tool_calls:
