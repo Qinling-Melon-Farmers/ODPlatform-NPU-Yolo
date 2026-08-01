@@ -1,4 +1,4 @@
-"""PySide6 desktop workbench for SteelDefect Studio."""
+"""PySide6 desktop workbench for ODPlatform Studio."""
 
 from __future__ import annotations
 
@@ -59,7 +59,7 @@ class MainWindow(QMainWindow):
 
     def __init__(self) -> None:
         super().__init__()
-        self.setWindowTitle("SteelDefect Studio")
+        self.setWindowTitle("ODPlatform Studio")
         self.resize(1440, 900)
         self._thread: QThread | None = None
         self._worker: InferWorker | None = None
@@ -80,7 +80,7 @@ class MainWindow(QMainWindow):
         self.conf_edit = QLineEdit("0.25")
         self.iou_edit = QLineEdit("0.70")
         self.device_edit = QLineEdit("0")
-        self.name_edit = QLineEdit("desktop-steel-demo")
+        self.name_edit = QLineEdit("desktop-demo")
         self.imgsz_spin = QSpinBox()
         self.imgsz_spin.setRange(32, 4096)
         self.imgsz_spin.setSingleStep(32)
@@ -380,9 +380,9 @@ class MainWindow(QMainWindow):
         header = QFrame()
         header.setObjectName("Header")
         layout = QHBoxLayout(header)
-        title = QLabel("SteelDefect Studio")
+        title = QLabel("ODPlatform Studio")
         title.setObjectName("AppTitle")
-        subtitle = QLabel("钢材表面缺陷检测工作台 | 推理、评估、质检、训练结果浏览、任务启动")
+        subtitle = QLabel("目标检测开发平台 | 推理、评估、质检、训练、AI 助手、任务启动")
         subtitle.setObjectName("AppSubtitle")
         text = QVBoxLayout()
         text.addWidget(title)

@@ -1,6 +1,6 @@
 # ODPlatform Desktop
 
-`apps/desktop` 是 SteelDefect Studio 的 PySide6 桌面工作台。桌面端只调用 platform 服务层和现有 CLI，不在 UI 层复制训练、推理、质检或数据转换逻辑。
+`apps/desktop` 是 ODPlatform Studio 的 PySide6 桌面工作台。桌面端只调用 platform 服务层和现有 CLI，不在 UI 层复制训练、推理、质检或数据转换逻辑。
 
 ## 启动
 
