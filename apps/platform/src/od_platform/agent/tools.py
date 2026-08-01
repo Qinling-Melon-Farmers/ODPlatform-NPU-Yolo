@@ -15,9 +15,13 @@ from __future__ import annotations
 
 import importlib
 import io
+import json
 import logging
+import re
+import sys
 from collections.abc import Callable
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Any
 
 from od_platform.agent.schema import ToolSchema, parser_to_tool_schema
@@ -28,6 +32,8 @@ logger = logging.getLogger(__name__)
 SUMMARY_LIMIT = 4000
 #: 完整日志长度上限。
 DETAILS_LIMIT = 20000
+#: ANSI 颜色码（控制台 formatter 输出会携带）。
+_ANSI_RE = re.compile(r"\x1b\[[0-9;]*m")
 
 
 @dataclass(frozen=True)
@@ -251,9 +257,7 @@ class ToolRegistry:
             argv.append("--dry-run")
 
         output = _run_cli(entry.module, entry.entry, argv, executor=self.executor)
-        summary = output.output.strip()
-        if len(summary) > SUMMARY_LIMIT:
-            summary = summary[:SUMMARY_LIMIT] + "\n...(已截断)"
+        summary = _summarize_output(output.output)
         return ToolResult(
             name=name,
             arguments=safe_arguments,
@@ -278,9 +282,13 @@ class _CliOutput:
 def _run_cli(module: str, entry: str, argv: list[str], *, executor: str) -> _CliOutput:
     """进程内调用 CLI 模块入口，捕获日志输出与退出码。
 
-    前提：CLI 内部使用命名 logger（``get_logger(logger_name=...)``）而非
-    直接配置 root logger，否则临时挂载的捕获 handler 会被覆盖/污染。
-    当前平台全部 CLI 均符合该约定。
+    捕获采用组合方案（覆盖全部日志路径）:
+    1. 临时替换 ``sys.stdout`` 为 capture —— 调用后才创建的
+       ``StreamHandler(sys.stdout)``（如 configure_run_logger 的 run logger，
+       propagate=False）会绑定新 stdout，日志进 capture；
+    2. 遍历 ``loggerDict`` 给已存在的 propagate=False logger 补挂 capture
+       handler —— 覆盖会话早期创建、handler 已绑定旧 stdout 的命名 logger；
+    3. finally 恢复 sys.stdout 并移除全部补挂 handler。
 
     进程内多库（torch/matplotlib）同载 libiomp5md.dll 会触发 OMP Error #15，
     与 CLI 入口一致设置 KMP_DUPLICATE_LIB_OK（无害）。
@@ -299,7 +307,17 @@ def _run_cli(module: str, entry: str, argv: list[str], *, executor: str) -> _Cli
     previous_level = root_logger.level
     root_logger.setLevel(logging.INFO)
     root_logger.addHandler(handler)
+
+    previous_stdout = sys.stdout
+    sys.stdout = capture  # type: ignore[assignment] - 覆盖运行期创建的 StreamHandler(sys.stdout)
+    attached: list[logging.Logger] = []
     try:
+        for candidate in logging.Logger.manager.loggerDict.values():
+            if not isinstance(candidate, logging.Logger) or candidate is root_logger:
+                continue
+            if not candidate.propagate and handler not in candidate.handlers:
+                candidate.addHandler(handler)
+                attached.append(candidate)
         try:
             code = main_func(argv)
         except SystemExit as exc:
@@ -311,10 +329,58 @@ def _run_cli(module: str, entry: str, argv: list[str], *, executor: str) -> _Cli
             code = 2
             logging.getLogger("agent.tools").error("工具异常: %s: %s", type(exc).__name__, exc)
     finally:
+        sys.stdout = previous_stdout
+        for candidate in attached:
+            candidate.removeHandler(handler)
         root_logger.removeHandler(handler)
         root_logger.setLevel(previous_level)
     output = capture.getvalue()
     return _CliOutput(exit_code=code, output=output, details=output)
+
+
+def _summarize_output(output: str, *, limit: int = SUMMARY_LIMIT) -> str:
+    """将捕获输出整理为 Agent 观察文本。
+
+    处理策略（失败归因优先）:
+    1. ERROR/WARNING 行提取置顶；
+    2. 过滤 get_logger 启动 banner 行（Logging Ready/runtime:/log type: 等）；
+    3. 剩余行取尾部 N 行（保留最新进展）后截断到 limit。
+    """
+    if not output:
+        return ""
+    lines = output.splitlines()
+    banner_markers = (
+        "Logging Ready",
+        "runtime:",
+        "log type:",
+        "log file:",
+        "log level:",
+        "model name:",
+        "环境信息快照",
+    )
+    errors: list[str] = []
+    body: list[str] = []
+    for line in lines:
+        # 剥 ANSI 颜色码（控制台 formatter 输出）
+        stripped = _ANSI_RE.sub("", line).strip()
+        if any(marker in stripped for marker in banner_markers) or stripped.startswith("=" * 10):
+            continue
+        if stripped.startswith(("ERROR", "WARNING", "错误", "警告")) or " [ERROR" in stripped or " [WARNING" in stripped:
+            errors.append(stripped)
+        else:
+            body.append(stripped)
+
+    tail = body[-150:]
+    parts: list[str] = []
+    if errors:
+        parts.append("关键错误/警告:")
+        parts.extend(errors[:30])
+        parts.append("---")
+    parts.extend(tail)
+    summary = "\n".join(parts).strip()
+    if len(summary) > limit:
+        summary = summary[:limit] + "\n...(已截断)"
+    return summary
 
 
 def _argv_from_arguments(schema: ToolSchema, arguments: dict) -> list[str]:
@@ -348,6 +414,45 @@ def _argv_from_arguments(schema: ToolSchema, arguments: dict) -> list[str]:
     positionals.sort(key=lambda pair: pair[0])
     argv.extend(item for _index, item in positionals)
     return argv
+
+
+def _artifact_summary(run_dir: Path) -> str:
+    """提取一个运行目录的关键指标摘要（训练/评估/质检）。"""
+    results_csv = run_dir / "results.csv"
+    if results_csv.exists():
+        from od_platform.training.metrics import summarize_results_csv
+
+        try:
+            summary = summarize_results_csv(results_csv)
+            last = summary.get("last") or {}
+            epochs = summary.get("epochs", "?")
+            map50 = last.get("map50")
+            map50_95 = last.get("map50_95")
+            if isinstance(map50, (int, float)):
+                return f"训练 {epochs} 轮, mAP50={map50:.4f}, mAP50-95={map50_95:.4f}"
+            return f"训练 {epochs} 轮"
+        except (OSError, ValueError, IndexError):
+            return "results.csv 读取失败"
+
+    audit = run_dir / "odp_audit.json"
+    if audit.exists():
+        try:
+            payload = json.loads(audit.read_text(encoding="utf-8"))
+            metrics = payload.get("metrics", {})
+            map50 = metrics.get("map50") or metrics.get("map50_95")
+            return f"评估 mAP={map50:.4f}" if isinstance(map50, (int, float)) else "评估完成"
+        except (OSError, ValueError, json.JSONDecodeError):
+            return "评估审计读取失败"
+
+    report = run_dir / "report.json"
+    if report.exists():
+        try:
+            payload = json.loads(report.read_text(encoding="utf-8"))
+            return f"质检 {payload.get('overall_severity', '?')}"
+        except (OSError, ValueError, json.JSONDecodeError):
+            return "质检报告读取失败"
+
+    return "无指标文件"
 
 
 def _redact_arguments(arguments: dict) -> dict:
@@ -421,6 +526,53 @@ def _register_service_tools(registry: ToolRegistry) -> None:
             True,
             None,
             "可用模型: " + ", ".join(names) if names else "无可用模型",
+            "",
+        )
+
+    @registry.register_service(
+        "list_run_artifacts",
+        description="列出最近运行产物（训练/评估/质检）的目录与关键指标，训练或评估后用于检查结果",
+        parameters={
+            "type": "object",
+            "properties": {
+                "task": {
+                    "type": "string",
+                    "enum": ["train", "evaluate", "validate"],
+                    "description": "产物类型过滤：train/evaluate/validate（默认全部）",
+                },
+                "limit": {"type": "integer", "description": "每类最近 N 个（默认 5）"},
+            },
+        },
+    )
+    def _list_run_artifacts(arguments: dict) -> ToolResult:
+        from od_platform.common import paths
+
+        task = arguments.get("task") or None
+        limit = int(arguments.get("limit") or 5)
+        scan_roots: list[tuple[str, Path]] = []
+        if task in (None, "train"):
+            scan_roots.append(("train", paths.RUNS_DIR / "detect"))
+        if task in (None, "evaluate"):
+            scan_roots.append(("evaluate", paths.RUNS_DIR / "evaluation"))
+        if task in (None, "validate"):
+            scan_roots.append(("validate", paths.RUNS_DIR / "data_validation"))
+
+        lines: list[str] = []
+        for label, root in scan_roots:
+            if not root.exists():
+                continue
+            candidates = [path for path in sorted(root.iterdir(), key=lambda p: p.stat().st_mtime, reverse=True) if path.is_dir()][:limit]
+            if not candidates:
+                continue
+            lines.append(f"[{label}]")
+            for run_dir in candidates:
+                lines.append(f"  {run_dir.name}: {_artifact_summary(run_dir)}")
+        return ToolResult(
+            "list_run_artifacts",
+            {"task": task, "limit": limit},
+            True,
+            None,
+            "\n".join(lines) if lines else "没有找到运行产物",
             "",
         )
 

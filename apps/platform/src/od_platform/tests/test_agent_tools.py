@@ -7,6 +7,7 @@ from od_platform.agent.tools import (
     ToolRegistry,
     _argv_from_arguments,
     _redact_arguments,
+    _summarize_output,
     build_default_registry,
 )
 
@@ -60,6 +61,50 @@ class TestRedact(unittest.TestCase):
         redacted = _redact_arguments({"api_key": "sk-123", "dataset": "rsod", "model": "deepseek-chat"})
         self.assertEqual(redacted["api_key"], "***")
         self.assertEqual(redacted["dataset"], "rsod")
+
+
+class TestSummarizeOutput(unittest.TestCase):
+    BANNER = "\n".join(
+        [
+            "INFO ============================================================",
+            "INFO                      环境信息快照",
+            "INFO ============================================================",
+            "INFO runtime: Windows 11",
+            "INFO log type: validate_data",
+            "INFO Logging Ready",
+        ]
+    )
+
+    def test_errors_promoted_above_banner(self) -> None:
+        output = (
+            f"{self.BANNER}\n"
+            "INFO 开始验证\n"
+            "ERROR 数据集缺失: train 目录不存在\n"
+            "INFO 验证结束\n"
+        )
+        summary = _summarize_output(output)
+        # 错误行置顶且 banner 被过滤
+        self.assertIn("ERROR 数据集缺失", summary)
+        self.assertLess(summary.index("ERROR 数据集缺失"), summary.index("开始验证"))
+        self.assertNotIn("Logging Ready", summary)
+        self.assertNotIn("环境信息快照", summary)
+
+    def test_body_tail_kept(self) -> None:
+        lines = [f"INFO 第 {index} 行" for index in range(200)]
+        output = "\n".join(lines)
+        summary = _summarize_output(output)
+        # 尾部 150 行保留，头部被丢弃
+        self.assertIn("第 199 行", summary)
+        self.assertNotIn("第 0 行", summary)
+
+    def test_empty_output(self) -> None:
+        self.assertEqual(_summarize_output(""), "")
+
+    def test_summary_truncated_to_limit(self) -> None:
+        output = "\n".join(f"INFO 内容 {index}" for index in range(1000))
+        summary = _summarize_output(output, limit=500)
+        self.assertLessEqual(len(summary), 500 + 10)
+        self.assertIn("已截断", summary)
 
 
 class TestMiniCliExecution(unittest.TestCase):
@@ -154,6 +199,20 @@ class TestDefaultRegistry(unittest.TestCase):
             self.assertIn("图片", result.summary)
         else:
             self.assertIn("没有数据集", result.summary)
+
+    def test_list_run_artifacts_registered_and_executes(self) -> None:
+        registry = build_default_registry()
+        names = registry.names()
+        self.assertIn("list_run_artifacts", names)
+        result = registry.execute("list_run_artifacts", {"task": "train", "limit": 3})
+        self.assertTrue(result.ok)
+        # 训练产物存在时输出目录名，不存在时给出提示
+        from od_platform.common import paths
+
+        if (paths.RUNS_DIR / "detect").exists() and any((paths.RUNS_DIR / "detect").iterdir()):
+            self.assertIn("[train]", result.summary)
+        else:
+            self.assertIn("没有找到运行产物", result.summary)
 
 
 if __name__ == "__main__":

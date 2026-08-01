@@ -1,6 +1,6 @@
-# SteelDefect Studio
+# ODPlatform（目标检测开发平台）
 
-SteelDefect Studio 是基于 ODPlatform 代码包构建的钢材表面缺陷目标检测平台。当前端到端主线只支持 YOLO `detect` 任务，`segment` 保留为未来扩展，不作为本阶段可交付链路。
+ODPlatform 是通用目标检测开发平台（桌面工作台 ODPlatform Studio），覆盖从数据导入、质检、标注（手动/VLM 自动）、模型训练（YOLO v5/v7/v8/v9/v10/11/12）到推理评估的端到端工作流，并支持 AI 助手自然语言驱动（Agent 工具编排）。当前端到端主线只支持 YOLO `detect` 任务，`segment` 保留为未来扩展，不作为本阶段可交付链路。
 
 内部 Python 包名保持为 `od_platform`，仓库根目录为 `ODPlatform/`。
 
@@ -17,7 +17,7 @@ pip install -e ./apps/platform
 
 主要 CLI 会在启动时自检当前解释器是否来自 `odplat`，如果不是只给 warning，不阻断运行。
 
-## Steel 数据集流程
+## 示例数据集流程（Steel）
 
 ```powershell
 # 导入 Roboflow VOC zip
