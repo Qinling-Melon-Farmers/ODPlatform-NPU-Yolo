@@ -164,8 +164,16 @@ def _handle_slash_command(
 
     if cmd == "/help":
         logger.info(
-            "命令: /help /sessions /resume /open <id> /new /clear /exit"
+            "命令: /help /sessions /resume /open <id> /new /clear /confirm <工具> /exit"
         )
+    elif cmd == "/confirm":
+        if not arg:
+            logger.info("用法: /confirm <工具名>（如 /confirm odp-train）")
+        elif arg not in registry.names():
+            logger.info("未知工具: %s（/tools 查看）", arg)
+        else:
+            orchestrator.registry.confirm(arg)
+            logger.info("已确认工具 %s（风险等级: %s）", arg, orchestrator.registry.risk_level(arg))
     elif cmd == "/sessions":
         sessions = list_sessions(limit=20)
         if not sessions:

@@ -35,6 +35,22 @@ DETAILS_LIMIT = 20000
 #: ANSI 颜色码（控制台 formatter 输出会携带）。
 _ANSI_RE = re.compile(r"\x1b\[[0-9;]*m")
 
+#: 工具风险等级（评审 P1-3）。read_only 自动执行，其余需用户确认。
+RISK_READ_ONLY = "read_only"
+RISK_WRITE_FILES = "write_files"
+RISK_COST_API = "cost_api"
+RISK_GPU_LONG_RUN = "gpu_long_run"
+RISK_DESTRUCTIVE = "destructive"
+
+#: 风险等级中文说明（确认提示用）。
+RISK_LABELS: dict[str, str] = {
+    RISK_READ_ONLY: "只读查询",
+    RISK_WRITE_FILES: "写入文件",
+    RISK_COST_API: "消耗 API 额度",
+    RISK_GPU_LONG_RUN: "GPU 长任务",
+    RISK_DESTRUCTIVE: "破坏性操作",
+}
+
 
 @dataclass(frozen=True)
 class ToolResult:
@@ -67,7 +83,7 @@ class _CliEntry:
     module: str
     entry: str
     schema: ToolSchema
-    requires_confirmation: bool = False
+    risk_level: str = RISK_READ_ONLY
     excluded_args: tuple[str, ...] = ()
     dry_run_flag: bool = False
 
@@ -105,11 +121,19 @@ class ToolRegistry:
         module: str,
         *,
         entry: str = "main",
-        requires_confirmation: bool = False,
+        risk_level: str = RISK_READ_ONLY,
         excluded_args: tuple[str, ...] = (),
         dry_run_flag: bool = False,
     ) -> None:
-        """注册一个 CLI 模块为工具（走 ``module.main(argv)`` 进程内调用）。"""
+        """注册一个 CLI 模块为工具（走 ``module.main(argv)`` 进程内调用）。
+
+        Args:
+            module:         CLI 模块路径。
+            entry:          入口函数名（默认 main）。
+            risk_level:     风险等级（read_only 自动执行，其余需确认）。
+            excluded_args:  从 schema 排除的参数。
+            dry_run_flag:   安全模式下自动追加 --dry-run。
+        """
         try:
             module_obj = importlib.import_module(module)
         except ImportError as exc:
@@ -142,7 +166,7 @@ class ToolRegistry:
             module=module,
             entry=entry,
             schema=schema,
-            requires_confirmation=requires_confirmation,
+            risk_level=risk_level,
             excluded_args=excluded_args,
             dry_run_flag=dry_run_flag,
         )
@@ -203,6 +227,11 @@ class ToolRegistry:
         entry = self._cli_entries.get(name)
         return entry.schema if entry is not None else None
 
+    def risk_level(self, name: str) -> str:
+        """返回工具的风险等级（未注册返回 read_only）。"""
+        entry = self._cli_entries.get(name)
+        return entry.risk_level if entry is not None else RISK_READ_ONLY
+
     # ---- 执行 ----
 
     def execute(self, name: str, arguments: dict) -> ToolResult:
@@ -242,13 +271,16 @@ class ToolRegistry:
                 details="",
             )
 
-        if entry.requires_confirmation and name not in self.confirmed_tools:
+        # 安全模式下带 dry-run 标志的工具自动放行（dry-run 无副作用）
+        auto_approved = self.dry_run and entry.dry_run_flag
+        if entry.risk_level != RISK_READ_ONLY and name not in self.confirmed_tools and not auto_approved:
+            label = RISK_LABELS.get(entry.risk_level, entry.risk_level)
             return ToolResult(
                 name=name,
                 arguments=safe_arguments,
                 ok=False,
                 exit_code=None,
-                summary=f"工具 {name} 需要用户确认后才可执行，请先征得用户同意",
+                summary=f"工具 {name} 属于「{label}」风险等级，需要用户确认后才可执行，请先征得用户同意",
                 details="",
             )
 
@@ -615,16 +647,16 @@ def _register_service_tools(registry: ToolRegistry) -> None:
 
 #: (模块路径, 注册标志)。auto-annotate 的凭据只走环境变量。
 _DEFAULT_CLI_TOOLS: list[tuple[str, dict]] = [
-    ("od_platform.cli.import_dataset", {}),
-    ("od_platform.cli.transform_data", {}),
-    ("od_platform.cli.validate_data", {}),
-    ("od_platform.runtime_config.generator", {}),
-    ("od_platform.cli.train_model", {"dry_run_flag": True}),
-    ("od_platform.cli.evaluate_model", {}),
-    ("od_platform.cli.infer_model", {"dry_run_flag": True}),
-    ("od_platform.cli.plot_training", {}),
+    ("od_platform.cli.import_dataset", {"risk_level": RISK_WRITE_FILES}),
+    ("od_platform.cli.transform_data", {"risk_level": RISK_WRITE_FILES}),
+    ("od_platform.cli.validate_data", {"risk_level": RISK_WRITE_FILES}),
+    ("od_platform.runtime_config.generator", {"risk_level": RISK_WRITE_FILES}),
+    ("od_platform.cli.train_model", {"risk_level": RISK_GPU_LONG_RUN, "dry_run_flag": True}),
+    ("od_platform.cli.evaluate_model", {"risk_level": RISK_GPU_LONG_RUN}),
+    ("od_platform.cli.infer_model", {"risk_level": RISK_GPU_LONG_RUN, "dry_run_flag": True}),
+    ("od_platform.cli.plot_training", {"risk_level": RISK_WRITE_FILES}),
     (
         "od_platform.annotation.cli.auto_annotate",
-        {"excluded_args": ("--api-key", "--base-url")},
+        {"risk_level": RISK_COST_API, "excluded_args": ("--api-key", "--base-url")},
     ),
 ]
