@@ -140,6 +140,17 @@ class TestAnnotationSession(unittest.TestCase):
             self.assertIsNone(session.next_unannotated())
 
 
+class TestAnnotateCliEditMode(unittest.TestCase):
+    def test_edit_flag_defined_in_parser(self) -> None:
+        from od_platform.annotation.cli.annotate import build_parser
+
+        parser = build_parser()
+        namespace = parser.parse_args(["--dataset", "demo", "--classes", "cat", "--edit"])
+        self.assertTrue(namespace.edit)
+        namespace2 = parser.parse_args(["--dataset", "demo", "--classes", "cat"])
+        self.assertFalse(namespace2.edit)
+
+
 class TestCanvasImageIO(unittest.TestCase):
     def test_imread_unicode_path(self) -> None:
         """cv2.imread 无法读取含中文路径，_imread_unicode 必须可读（回归测试）。"""

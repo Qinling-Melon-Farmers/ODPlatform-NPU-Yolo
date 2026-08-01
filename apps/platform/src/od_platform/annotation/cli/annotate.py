@@ -33,6 +33,11 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="继续中断的会话（默认即跳过已标注图片，此参数为显式语义提示）",
     )
+    parser.add_argument(
+        "--edit",
+        action="store_true",
+        help="编辑模式：遍历全部图片（含已标注），加载已有标注供精修（如 VLM 预标注后人工修正）",
+    )
     parser.add_argument("--max-display-size", type=int, default=1200, help="显示尺寸上限（默认 1200）")
     return parser
 
@@ -69,29 +74,41 @@ def main(argv: list[str] | None = None) -> int:
         logger.info("类别: %s", " / ".join(f"{index}:{name}" for index, name in enumerate(args.classes)))
 
         canvas = AnnotationCanvas(classes=args.classes, max_display_size=args.max_display_size)
-        while True:
-            image_path = session.next_unannotated()
-            if image_path is None:
-                logger.info("全部图片标注完成")
-                break
+        if args.edit:
+            # 编辑模式：遍历全部图片（含已标注），existing 加载已有标注供精修
+            logger.info("编辑模式：将遍历全部 %d 张图片（含已标注）", session.total_images)
+            for image_path in session.images:
+                existing = session.load_labels(image_path.stem)
+                result = canvas.annotate_image(image_path, existing=existing)
+                if result.is_quit:
+                    logger.info("用户退出编辑会话")
+                    break
+                if result.action == "save":
+                    session.save_labels(image_path.stem, result.boxes)
+                logger.info("已处理: %s (%s, %d 框)", image_path.name, result.action, len(result.boxes))
+        else:
+            while True:
+                image_path = session.next_unannotated()
+                if image_path is None:
+                    logger.info("全部图片标注完成")
+                    break
 
-            # 编辑已有标注走 API（annotate_image(existing=...)）；CLI 按未标注推进，恒为新图
-            result = canvas.annotate_image(image_path)
-            if result.is_quit:
-                logger.info("用户退出标注会话")
-                break
-            if result.action == "save":
-                session.save_labels(image_path.stem, result.boxes)
+                result = canvas.annotate_image(image_path)
+                if result.is_quit:
+                    logger.info("用户退出标注会话")
+                    break
+                if result.action == "save":
+                    session.save_labels(image_path.stem, result.boxes)
 
-            done, remaining_total = session.progress
-            logger.info(
-                "进度 %d/%d: %s (%s, %d 框)",
-                done,
-                remaining_total,
-                image_path.name,
-                result.action,
-                len(result.boxes),
-            )
+                done, remaining_total = session.progress
+                logger.info(
+                    "进度 %d/%d: %s (%s, %d 框)",
+                    done,
+                    remaining_total,
+                    image_path.name,
+                    result.action,
+                    len(result.boxes),
+                )
 
         done, remaining_total = session.progress
         logger.info("标注完成: %d/%d 张已标注，产物目录 %s", done, remaining_total, labels_dir)
