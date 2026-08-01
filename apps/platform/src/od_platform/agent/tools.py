@@ -116,18 +116,20 @@ class ToolRegistry:
             return
 
         if excluded_args:
+            # 支持选项字符串（--api-key）或属性名（api_key）两种写法
+            excluded = {arg.lstrip("-").replace("-", "_") for arg in excluded_args}
             properties = dict(schema.parameters["properties"])
-            for key in excluded_args:
+            for key in excluded:
                 properties.pop(key, None)
             parameters = {"type": "object", "properties": properties}
-            required = [key for key in schema.parameters.get("required", []) if key not in excluded_args]
+            required = [key for key in schema.parameters.get("required", []) if key not in excluded]
             if required:
                 parameters["required"] = required
             schema = ToolSchema(
                 name=schema.name,
                 description=schema.description,
                 parameters=parameters,
-                arg_specs=[spec for spec in schema.arg_specs if spec.key not in excluded_args],
+                arg_specs=[spec for spec in schema.arg_specs if spec.key not in excluded],
             )
 
         self._cli_entries[schema.name] = _CliEntry(
