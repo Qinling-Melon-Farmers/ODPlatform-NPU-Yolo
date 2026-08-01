@@ -2,7 +2,11 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from od_platform.annotation.canvas import boxes_to_display_coords, compute_display_scale
+from od_platform.annotation.canvas import (
+    _imread_unicode,
+    boxes_to_display_coords,
+    compute_display_scale,
+)
 from od_platform.annotation.session import AnnotationSession
 from od_platform.annotation.writer import BBox, bbox_from_pixels, read_yolo_label, write_yolo_label
 
@@ -134,6 +138,32 @@ class TestAnnotationSession(unittest.TestCase):
             session.save_labels("bg", [])
             self.assertEqual(session.progress, (1, 1))
             self.assertIsNone(session.next_unannotated())
+
+
+class TestCanvasImageIO(unittest.TestCase):
+    def test_imread_unicode_path(self) -> None:
+        """cv2.imread 无法读取含中文路径，_imread_unicode 必须可读（回归测试）。"""
+        try:
+            import cv2
+            import numpy as np
+        except ImportError:  # pragma: no cover
+            self.skipTest("opencv-python 不可用")
+        with tempfile.TemporaryDirectory() as temp_dir:
+            # 中文目录名复现 Windows 非 ASCII 路径问题
+            image_path = Path(temp_dir) / "中文标注测试" / "样例.jpg"
+            image_path.parent.mkdir(parents=True)
+            canvas = np.zeros((64, 96, 3), dtype=np.uint8)
+            ok, encoded = cv2.imencode(".jpg", canvas)
+            self.assertTrue(ok)
+            encoded.tofile(str(image_path))
+
+            loaded = _imread_unicode(image_path)
+            self.assertIsNotNone(loaded)
+            if loaded is not None:
+                self.assertEqual(loaded.shape, (64, 96, 3))
+
+    def test_imread_unicode_missing_file(self) -> None:
+        self.assertIsNone(_imread_unicode(Path("不存在/缺失.jpg")))
 
 
 class TestCanvasMath(unittest.TestCase):
