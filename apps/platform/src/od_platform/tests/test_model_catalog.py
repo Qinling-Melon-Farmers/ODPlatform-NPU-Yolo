@@ -16,11 +16,17 @@ from od_platform.model_catalog import loader as model_loader
 
 
 class TestModelCatalog(unittest.TestCase):
-    def test_builtin_catalog_contains_ten_yolo_models(self) -> None:
-        self.assertEqual(len(BUILTIN_MODELS), 10)
-        for family in ("yolo11", "yolov8"):
-            for variant in ("n", "s", "m", "l", "x"):
-                self.assertIn(f"{family}{variant}.pt", BUILTIN_MODELS)
+    ALL_YOLO_FAMILIES = ("yolov5", "yolov7", "yolov8", "yolov9", "yolov10", "yolo11", "yolo12")
+
+    def test_builtin_catalog_covers_all_yolo_families(self) -> None:
+        self.assertEqual(len(BUILTIN_MODELS), 34)
+        for family in self.ALL_YOLO_FAMILIES:
+            family_models = list_models(family=family)
+            self.assertTrue(family_models, f"系列 {family} 缺失模型")
+
+    def test_builtin_catalog_contains_classic_variants(self) -> None:
+        for name in ("yolov8n.pt", "yolo11n.pt", "yolov5nu.pt", "yolov9t.pt", "yolov10n.pt", "yolo12n.pt"):
+            self.assertIn(name, BUILTIN_MODELS)
 
     def test_get_model_info_known(self) -> None:
         info = get_model_info("yolo11n.pt")
@@ -42,29 +48,34 @@ class TestModelCatalog(unittest.TestCase):
 
     def test_list_families(self) -> None:
         families = list_families(task=Task.DETECT)
-        self.assertEqual(families, ["yolo11", "yolov8"])
+        self.assertEqual(families, list(self.ALL_YOLO_FAMILIES))
 
     def test_recommend_fastest(self) -> None:
         models = recommend_model("最快")
-        self.assertEqual(models[0].name, "yolo11n.pt")
+        min_speed = min(info.speed_cpu_ms for info in models)
+        self.assertEqual(models[0].speed_cpu_ms, min_speed)
 
     def test_recommend_most_accurate(self) -> None:
         models = recommend_model("最准")
-        self.assertEqual(models[0].name, "yolo11x.pt")
+        best_metric = max((info.primary_metric or 0.0) for info in models)
+        self.assertAlmostEqual(models[0].primary_metric or 0.0, best_metric)
 
     def test_recommend_balanced(self) -> None:
         models = recommend_model("平衡")
-        self.assertEqual(models[0].name, "yolo11m.pt")
+        self.assertEqual(models[0].size_category, "medium")
 
     def test_recommend_lightweight(self) -> None:
         models = recommend_model("轻量")
-        self.assertEqual(models[0].name, "yolo11n.pt")
+        min_params = min(info.params_m for info in models)
+        self.assertEqual(models[0].params_m, min_params)
 
     def test_recommend_english_keywords(self) -> None:
         models = recommend_model("fastest")
-        self.assertEqual(models[0].name, "yolo11n.pt")
+        min_speed = min(info.speed_cpu_ms for info in models)
+        self.assertEqual(models[0].speed_cpu_ms, min_speed)
         models = recommend_model("most accurate")
-        self.assertEqual(models[0].name, "yolo11x.pt")
+        best_metric = max((info.primary_metric or 0.0) for info in models)
+        self.assertAlmostEqual(models[0].primary_metric or 0.0, best_metric)
 
     def test_recommend_family_filter_from_keyword(self) -> None:
         models = recommend_model("yolov8 最准")
@@ -116,7 +127,7 @@ class TestModelCatalog(unittest.TestCase):
             "od_platform.model_catalog.loader._EXTRA_MODELS_PATH", Path("no-such-dir") / "models.yaml"
         ), patch.object(model_loader, "_extra_models_cache", None):
             self.assertEqual(get_model_info("anything.pt"), None)
-            self.assertEqual(len(list_models()), 10)
+            self.assertEqual(len(list_models()), 34)
 
     def test_extra_models_invalid_yaml_is_ignored(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -125,7 +136,7 @@ class TestModelCatalog(unittest.TestCase):
             with patch("od_platform.model_catalog.loader._EXTRA_MODELS_PATH", extra_yaml), patch.object(
                 model_loader, "_extra_models_cache", None
             ):
-                self.assertEqual(len(list_models()), 10)
+                self.assertEqual(len(list_models()), 34)
 
     def test_model_info_is_frozen(self) -> None:
         from dataclasses import FrozenInstanceError
