@@ -4,11 +4,13 @@ from __future__ import annotations
 
 import argparse
 import logging
-import os
 import sys
 
 from od_platform.common import paths
-from od_platform.common.environment import warn_cli_if_not_expected_environment
+from od_platform.common.environment import (
+    set_kmp_duplicate_lib_ok,
+    warn_cli_if_not_expected_environment,
+)
 from od_platform.common.logging_utils import get_logger
 from od_platform.evaluation import evaluate_yolo
 
@@ -74,7 +76,7 @@ def main(argv: list[str] | None = None) -> int:
     parser = build_parser()
     args = parser.parse_args(argv)
     # torch + matplotlib 同载 libiomp5md.dll 会触发 OMP Error #15（无害修复）
-    os.environ.setdefault("KMP_DUPLICATE_LIB_OK", "TRUE")
+    set_kmp_duplicate_lib_ok()
     get_logger(
         base_path=paths.LOGGING_DIR,
         log_type="evaluation",

@@ -11,6 +11,16 @@ from typing import TextIO
 EXPECTED_CONDA_ENV = "odplat"
 
 
+def set_kmp_duplicate_lib_ok() -> None:
+    """设置 KMP_DUPLICATE_LIB_OK=TRUE（幂等）。
+
+    torch 与 matplotlib 在同一进程加载多个 libiomp5md.dll 会触发
+    OMP Error #15 崩溃；该变量为官方建议的无害 workaround。
+    统一在进程早期（CLI 入口/工具执行）调用，避免各端重复 setdefault。
+    """
+    os.environ.setdefault("KMP_DUPLICATE_LIB_OK", "TRUE")
+
+
 def is_expected_environment(expected: str = EXPECTED_CONDA_ENV) -> bool:
     """Return whether the current Python process appears to run in the expected env."""
     conda_env = os.environ.get("CONDA_DEFAULT_ENV", "")

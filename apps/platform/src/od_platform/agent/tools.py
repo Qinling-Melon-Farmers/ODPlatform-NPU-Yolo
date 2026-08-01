@@ -16,7 +16,6 @@ from __future__ import annotations
 import importlib
 import io
 import logging
-import os
 from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Any
@@ -284,9 +283,11 @@ def _run_cli(module: str, entry: str, argv: list[str], *, executor: str) -> _Cli
     当前平台全部 CLI 均符合该约定。
 
     进程内多库（torch/matplotlib）同载 libiomp5md.dll 会触发 OMP Error #15，
-    与桌面端 CommandWorker 一致设置 KMP_DUPLICATE_LIB_OK（无害）。
+    与 CLI 入口一致设置 KMP_DUPLICATE_LIB_OK（无害）。
     """
-    os.environ.setdefault("KMP_DUPLICATE_LIB_OK", "TRUE")
+    from od_platform.common.environment import set_kmp_duplicate_lib_ok
+
+    set_kmp_duplicate_lib_ok()
     module_obj = importlib.import_module(module)
     main_func = getattr(module_obj, entry)
 
