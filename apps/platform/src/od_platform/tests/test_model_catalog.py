@@ -82,6 +82,18 @@ class TestModelCatalog(unittest.TestCase):
         self.assertEqual(models[0].name, "yolov8x.pt")
         self.assertTrue(all(info.family == "yolov8" for info in models))
 
+    def test_recommend_covers_all_yolo_families(self) -> None:
+        for family in self.ALL_YOLO_FAMILIES:
+            models = recommend_model(f"{family} 最准")
+            self.assertTrue(models, f"系列 {family} 无推荐结果")
+            self.assertTrue(all(info.family == family for info in models), f"系列 {family} 关键词未生效")
+
+    def test_recommend_short_family_alias(self) -> None:
+        models = recommend_model("v12 最准")
+        self.assertTrue(all(info.family == "yolo12" for info in models))
+        models = recommend_model("v5 最快")
+        self.assertTrue(all(info.family == "yolov5" for info in models))
+
     def test_recommend_respects_limit(self) -> None:
         models = recommend_model("最快", limit=3)
         self.assertEqual(len(models), 3)
@@ -122,6 +134,41 @@ class TestModelCatalog(unittest.TestCase):
                 names = [m.name for m in list_models(task="classify")]
                 self.assertEqual(names, ["resnet18"])
 
+    def test_extra_models_override_builtin_same_name(self) -> None:
+        """用户扩展与内置同名时，get_model_info/list_models 均以扩展优先。"""
+        with tempfile.TemporaryDirectory() as temp_dir:
+            extra_yaml = Path(temp_dir) / "models.yaml"
+            extra_yaml.write_text(
+                "\n".join(
+                    [
+                        "models:",
+                        "  - name: yolo11n.pt",
+                        "    family: yolo11",
+                        "    variant: n",
+                        "    task: detect",
+                        "    backend: custom",
+                        "    size_category: nano",
+                        "    params_m: 99.0",
+                        "    metrics:",
+                        "      map50_95: 99.9",
+                        "    speed_cpu_ms: 1.0",
+                        "    description: 用户自定义覆盖",
+                        "",
+                    ]
+                ),
+                encoding="utf-8",
+            )
+            with patch("od_platform.model_catalog.loader._EXTRA_MODELS_PATH", extra_yaml), patch.object(
+                model_loader, "_extra_models_cache", None
+            ):
+                info = get_model_info("yolo11n.pt")
+                self.assertIsNotNone(info)
+                if info is not None:
+                    self.assertEqual(info.backend, "custom")
+                    self.assertEqual(info.params_m, 99.0)
+                listed = list_models(family="yolo11")
+                self.assertEqual(listed[0].backend, "custom")
+
     def test_extra_models_missing_file_returns_empty(self) -> None:
         with patch(
             "od_platform.model_catalog.loader._EXTRA_MODELS_PATH", Path("no-such-dir") / "models.yaml"
@@ -137,6 +184,38 @@ class TestModelCatalog(unittest.TestCase):
                 model_loader, "_extra_models_cache", None
             ):
                 self.assertEqual(len(list_models()), 34)
+
+    def test_local_model_weights_recursive_scan(self) -> None:
+        """训练归档权重位于 trained/<run>/best.pt 子目录，应被递归发现。"""
+        from od_platform.common import paths as common_paths
+        from od_platform.common.refs import list_local_model_weights
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            checkpoints = root / "checkpoints"
+            trained = root / "trained"
+            pretrained = root / "pretrained"
+            workspace = root / "workspace"
+            (trained / "run-01" / "weights").mkdir(parents=True)
+            (pretrained / "yolo11n.pt").parent.mkdir(parents=True)
+            (checkpoints / "best.pt").parent.mkdir(parents=True)
+            (workspace / "custom.pt").parent.mkdir(parents=True)
+            (trained / "run-01" / "weights" / "best.pt").write_bytes(b"w")
+            (trained / "run-01" / "weights" / "last.pt").write_bytes(b"w")
+            (pretrained / "yolo11n.pt").write_bytes(b"w")
+            (checkpoints / "best.pt").write_bytes(b"w")
+            (workspace / "custom.pt").write_bytes(b"w")
+
+            with patch.object(common_paths, "CHECKPOINTS_DIR", checkpoints), patch.object(
+                common_paths, "TRAINED_MODELS_DIR", trained
+            ), patch.object(common_paths, "PRETRAINED_MODELS_DIR", pretrained), patch.object(
+                common_paths, "ROOT_DIR", workspace
+            ):
+                names = list_local_model_weights()
+            self.assertIn("best.pt", names)  # 递归：trained/<run>/weights/ 与 checkpoints/
+            self.assertIn("last.pt", names)
+            self.assertIn("yolo11n.pt", names)
+            self.assertIn("custom.pt", names)
 
     def test_model_info_is_frozen(self) -> None:
         from dataclasses import FrozenInstanceError

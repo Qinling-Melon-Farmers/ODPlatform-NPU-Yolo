@@ -2,7 +2,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from od_platform.annotation.canvas import compute_display_scale
+from od_platform.annotation.canvas import boxes_to_display_coords, compute_display_scale
 from od_platform.annotation.session import AnnotationSession
 from od_platform.annotation.writer import BBox, bbox_from_pixels, read_yolo_label, write_yolo_label
 
@@ -145,6 +145,29 @@ class TestCanvasMath(unittest.TestCase):
 
     def test_compute_display_scale_zero_size(self) -> None:
         self.assertEqual(compute_display_scale(0, 100, 1200), 1.0)
+
+    def test_boxes_to_display_coords_scales_down(self) -> None:
+        """编辑模式：原图框应缩放到显示坐标（scale<1 时），避免双重缩放。"""
+        box = BBox(class_id=1, x_center=0.5, y_center=0.5, width=0.2, height=0.2)
+        coords = boxes_to_display_coords([box], image_size=(100, 100), scale=0.5)
+        # 原图像素 (40,40,60,60) → 显示坐标 (20,20,30,30)
+        self.assertEqual(coords, [(20, 20, 30, 30, 1)])
+
+    def test_boxes_to_display_roundtrip_preserves_geometry(self) -> None:
+        """显示坐标转回归一化后应与原框一致（编辑-保存往返不漂移）。"""
+        box = BBox(class_id=0, x_center=0.3, y_center=0.6, width=0.4, height=0.2)
+        scale = 0.6
+        (x1, y1, x2, y2, class_id) = boxes_to_display_coords([box], image_size=(200, 100), scale=scale)[0]
+        restored = bbox_from_pixels(class_id, x1 / scale, y1 / scale, x2 / scale, y2 / scale, 200, 100)
+        self.assertAlmostEqual(restored.x_center, box.x_center, places=2)
+        self.assertAlmostEqual(restored.y_center, box.y_center, places=2)
+        self.assertAlmostEqual(restored.width, box.width, places=2)
+        self.assertAlmostEqual(restored.height, box.height, places=2)
+
+    def test_boxes_to_display_coords_identity_scale(self) -> None:
+        box = BBox(class_id=2, x_center=0.5, y_center=0.5, width=0.5, height=0.5)
+        coords = boxes_to_display_coords([box], image_size=(100, 100), scale=1.0)
+        self.assertEqual(coords, [(25, 25, 75, 75, 2)])
 
 
 if __name__ == "__main__":

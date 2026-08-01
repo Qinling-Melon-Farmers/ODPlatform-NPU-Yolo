@@ -150,8 +150,8 @@ class MainWindow(QMainWindow):
         self.model_catalog_list = QListWidget()
         self.model_catalog_filter_edit = QLineEdit("")
         self.model_catalog_filter_edit.setPlaceholderText("按名称/描述筛选模型")
+        # 系列下拉项由 _sync_model_family_combos() 从 model_catalog 动态填充
         self.model_catalog_family_combo = QComboBox()
-        self.model_catalog_family_combo.addItems(["全部", "yolov5", "yolov7", "yolov8", "yolov9", "yolov10", "yolo11", "yolo12"])
         self.model_catalog_recommend_edit = QLineEdit("")
         self.model_catalog_recommend_edit.setPlaceholderText("如：最快 / 最准 / yolov8 最准")
         self.model_catalog_recommend_button = QPushButton("推荐")
@@ -231,7 +231,6 @@ class MainWindow(QMainWindow):
         self.plot_extra_args_edit.setPlaceholderText("追加 CLI 参数")
 
         self.list_models_family_combo = QComboBox()
-        self.list_models_family_combo.addItems(["全部", "yolov5", "yolov7", "yolov8", "yolov9", "yolov10", "yolo11", "yolo12"])
         self.list_models_recommend_edit = QLineEdit("")
         self.list_models_recommend_edit.setPlaceholderText("自然语言推荐，如：最快 / 最准")
         self.list_models_limit_spin = QSpinBox()
@@ -485,7 +484,9 @@ class MainWindow(QMainWindow):
         return page
 
     def _refresh_model_catalog(self) -> None:
-        from od_platform.model_catalog import list_families, list_models, recommend_model
+        from od_platform.model_catalog import list_models, recommend_model
+
+        self._sync_model_family_combos()
 
         family = self.model_catalog_family_combo.currentText()
         family = None if family == "全部" else family
@@ -515,6 +516,19 @@ class MainWindow(QMainWindow):
         else:
             self.model_catalog_detail.setPlainText("没有匹配的模型。")
         self._set_status("就绪", f"模型目录 {len(models)} 个")
+
+    def _sync_model_family_combos(self) -> None:
+        """从 model_catalog 动态同步系列下拉项，避免与目录硬编码重复。"""
+        from od_platform.model_catalog import list_families
+
+        families = list_families()
+        for combo in (self.model_catalog_family_combo, self.list_models_family_combo):
+            current = combo.currentText()
+            combo.blockSignals(True)
+            combo.clear()
+            combo.addItems(["全部", *families])
+            combo.setCurrentText(current if current in ("全部", *families) else "全部")
+            combo.blockSignals(False)
 
     def _show_model_catalog_item(self, item) -> None:
         if item is None:
@@ -1194,7 +1208,7 @@ class MainWindow(QMainWindow):
             extra_args = _split_extra_args(self.list_models_extra_args_edit.text().strip())
             args: list[str] = []
             family = self.list_models_family_combo.currentText()
-            if family != "全部":
+            if family and family != "全部":
                 args.extend(["--family", family])
             recommend = self.list_models_recommend_edit.text().strip()
             if recommend:

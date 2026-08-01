@@ -69,21 +69,19 @@ def main(argv: list[str] | None = None) -> int:
         logger.info("类别: %s", " / ".join(f"{index}:{name}" for index, name in enumerate(args.classes)))
 
         canvas = AnnotationCanvas(classes=args.classes, max_display_size=args.max_display_size)
-        processed = 0
         while True:
             image_path = session.next_unannotated()
             if image_path is None:
                 logger.info("全部图片标注完成")
                 break
 
-            existing = session.load_labels(image_path.stem) if args.resume else []
-            result = canvas.annotate_image(image_path, existing=existing)
+            # 编辑已有标注走 API（annotate_image(existing=...)）；CLI 按未标注推进，恒为新图
+            result = canvas.annotate_image(image_path)
             if result.is_quit:
                 logger.info("用户退出标注会话")
                 break
             if result.action == "save":
                 session.save_labels(image_path.stem, result.boxes)
-            processed += 1
 
             done, remaining_total = session.progress
             logger.info(

@@ -41,6 +41,9 @@ _extra_models_cache: dict[str, ModelInfo] | None = None
 def get_extra_models() -> dict[str, ModelInfo]:
     """返回用户扩展模型目录（懒加载并缓存）。
 
+    缓存按进程存活（模块级变量），运行期修改 ``models.yaml`` 需重启进程
+    生效；桌面端/CLI 每次启动均重新加载，符合当前使用方式。
+
     Returns:
         用户 ``models.yaml`` 中声明的模型字典；文件缺失时为空字典。
     """

@@ -487,17 +487,18 @@ BUILTIN_MODELS: Final[dict[str, ModelInfo]] = {
 def get_model_info(name: str) -> ModelInfo | None:
     """按引用名查询模型元数据。
 
+    与 ``list_models`` 一致：用户扩展条目优先于内置同名条目。
+
     Args:
         name: 模型引用名，如 ``yolo11n.pt``。
 
     Returns:
         命中内置或用户扩展目录时返回 ModelInfo，否则返回 None。
     """
-    if name in BUILTIN_MODELS:
-        return BUILTIN_MODELS[name]
     from od_platform.model_catalog.loader import get_extra_models
 
-    return get_extra_models().get(name)
+    merged = {**BUILTIN_MODELS, **get_extra_models()}
+    return merged.get(name)
 
 
 def list_models(*, task: str | None = None, family: str | None = None) -> list[ModelInfo]:

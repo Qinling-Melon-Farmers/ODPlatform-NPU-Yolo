@@ -28,12 +28,22 @@ TASK_KEYWORDS: dict[str, str] = {
     "检测": Task.DETECT,
     "detect": Task.DETECT,
 }
-#: 系列关键词 -> 系列名。
+#: 系列关键词 -> 系列名。覆盖内置全系列，另含短别名（v5/v8/v11 等）。
 FAMILY_KEYWORDS: dict[str, str] = {
-    "yolo11": "yolo11",
-    "v11": "yolo11",
+    "yolov5": "yolov5",
+    "v5": "yolov5",
+    "yolov7": "yolov7",
+    "v7": "yolov7",
     "yolov8": "yolov8",
     "v8": "yolov8",
+    "yolov9": "yolov9",
+    "v9": "yolov9",
+    "yolov10": "yolov10",
+    "v10": "yolov10",
+    "yolo11": "yolo11",
+    "v11": "yolo11",
+    "yolo12": "yolo12",
+    "v12": "yolo12",
     "resnet": "resnet",
 }
 
@@ -87,6 +97,12 @@ def _parse_family(pref: str) -> str | None:
     """从关键词中解析模型系列，未命中返回 None。"""
     for keyword, family in FAMILY_KEYWORDS.items():
         if keyword in pref:
+            return family
+    # 动态兜底：用户扩展系列（configs/models.yaml 自定义系列名）
+    from od_platform.model_catalog.catalog import list_families
+
+    for family in list_families():
+        if family in pref:
             return family
     return None
 

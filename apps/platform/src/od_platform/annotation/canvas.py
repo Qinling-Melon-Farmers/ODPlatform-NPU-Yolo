@@ -80,6 +80,41 @@ def compute_display_scale(image_width: int, image_height: int, max_display_size:
     return min(1.0, max_display_size / image_width, max_display_size / image_height)
 
 
+def boxes_to_display_coords(
+    boxes: list[BBox],
+    *,
+    image_size: tuple[int, int],
+    scale: float,
+) -> list[tuple[int, int, int, int, int]]:
+    """将归一化标注转为画布显示坐标框（含类别 ID）。
+
+    编辑模式复用：显示坐标 = 原图像素坐标 × scale，与鼠标绘制
+    （显示坐标直接入库）保持一致，避免双重缩放。
+
+    Args:
+        boxes:      归一化标注列表。
+        image_size: 原图 (宽, 高)。
+        scale:      显示缩放因子。
+
+    Returns:
+        ``(x1, y1, x2, y2, class_id)`` 显示坐标列表。
+    """
+    width, height = image_size
+    result: list[tuple[int, int, int, int, int]] = []
+    for box in boxes:
+        x1, y1, x2, y2 = box.to_pixels(width, height)
+        result.append(
+            (
+                int(round(x1 * scale)),
+                int(round(y1 * scale)),
+                int(round(x2 * scale)),
+                int(round(y2 * scale)),
+                box.class_id,
+            )
+        )
+    return result
+
+
 class AnnotationCanvas:
     """基于 OpenCV 窗口的标注画布。
 
@@ -133,7 +168,7 @@ class AnnotationCanvas:
         self._scale = compute_display_scale(width, height, self.max_display_size)
         display = cv2.resize(image, (0, 0), fx=self._scale, fy=self._scale, interpolation=cv2.INTER_AREA)
 
-        self._boxes = [(*box.to_pixels(width, height), box.class_id) for box in (existing or [])]
+        self._boxes = boxes_to_display_coords(existing or [], image_size=(width, height), scale=self._scale)
         self._drag_start = None
         self._drag_end = None
         self._current_class = 0

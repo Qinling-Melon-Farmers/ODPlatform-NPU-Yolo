@@ -120,5 +120,5 @@ class AnnotationSession:
             kept.append(box)
         path = write_yolo_label(self.label_path_for(image_stem), kept)
         self._annotated_stems.add(image_stem)
-        logger.debug("已保存标注: %s (%d 框)", path, len(boxes))
+        logger.debug("已保存标注: %s (%d 框)", path, len(kept))
         return path

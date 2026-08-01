@@ -54,24 +54,43 @@ def resolve_model(ref: str) -> Path:
     return path
 
 
+#: 权重文件后缀。
+_WEIGHT_SUFFIXES: tuple[str, ...] = (".pt", ".pth")
+
+
+def _scan_weight_names(base_dir: Path, *, recursive: bool) -> list[str]:
+    """扫描目录下的权重文件名，可选递归。"""
+    if not base_dir.exists():
+        return []
+    if recursive:
+        candidates = sorted(
+            path for suffix in _WEIGHT_SUFFIXES for path in base_dir.rglob(f"*{suffix}")
+        )
+    else:
+        candidates = [path for path in sorted(base_dir.iterdir()) if path.suffix.lower() in _WEIGHT_SUFFIXES]
+    return [candidate.name for candidate in candidates]
+
+
 def list_local_model_weights() -> list[str]:
     """列出模型资产目录下已存在的权重文件名。
+
+    ``models/checkpoints``、``models/trained``、``models/pretrained``
+    递归扫描（训练归档位于 ``trained/<run>/best.pt`` 子目录）；
+    工作区根目录仅扫描顶层，避免全仓库遍历。
 
     Returns:
         模型目录中实际存在的 .pt/.pth 文件名列表（去重，按目录优先级排序）。
     """
     seen: list[str] = []
-    for base_dir in (
-        paths.CHECKPOINTS_DIR,
-        paths.TRAINED_MODELS_DIR,
-        paths.PRETRAINED_MODELS_DIR,
-        paths.ROOT_DIR,
+    for base_dir, recursive in (
+        (paths.CHECKPOINTS_DIR, True),
+        (paths.TRAINED_MODELS_DIR, True),
+        (paths.PRETRAINED_MODELS_DIR, True),
+        (paths.ROOT_DIR, False),
     ):
-        if not base_dir.exists():
-            continue
-        for candidate in sorted(base_dir.iterdir()):
-            if candidate.suffix.lower() in (".pt", ".pth") and candidate.name not in seen:
-                seen.append(candidate.name)
+        for name in _scan_weight_names(base_dir, recursive=recursive):
+            if name not in seen:
+                seen.append(name)
     return seen
 
 

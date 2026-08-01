@@ -82,7 +82,9 @@ def _render_table(logger: logging.Logger, models: list[ModelInfo]) -> None:
         logger.info("没有匹配的模型")
         return
 
-    metric_key = PRIMARY_METRIC.get(models[0].task, "metric") if models else "metric"
+    # 多任务混排（内置 detect + 扩展 classify）时指标键不唯一，回退 "metric"
+    metric_keys = {PRIMARY_METRIC.get(info.task, "metric") for info in models}
+    metric_key = metric_keys.pop() if len(metric_keys) == 1 else "metric"
     header = ("名称", "系列", "任务", "后端", "参数量(M)", metric_key, "CPU(ms)", "描述")
     logger.info(format_table_row(header, _TABLE_WIDTHS))
     logger.info(format_table_separator(_TABLE_WIDTHS))
