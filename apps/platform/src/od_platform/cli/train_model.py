@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import os
 import sys
 from pathlib import Path
 
@@ -68,6 +69,8 @@ def _apply_cli_overrides(config: YOLOTrainConfig, args: argparse.Namespace) -> Y
 def main(argv: list[str] | None = None) -> int:
     parser = build_parser()
     args = parser.parse_args(argv)
+    # torch + matplotlib 同载 libiomp5md.dll 会触发 OMP Error #15（无害修复）
+    os.environ.setdefault("KMP_DUPLICATE_LIB_OK", "TRUE")
     warn_cli_if_not_expected_environment()
     config_path: Path = resolve_runtime_config(args.config)
     try:

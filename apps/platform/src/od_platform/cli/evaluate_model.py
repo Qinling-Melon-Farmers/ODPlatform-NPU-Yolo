@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import logging
+import os
 import sys
 
 from od_platform.common import paths
@@ -72,6 +73,8 @@ def _cli_overrides(args: argparse.Namespace) -> dict[str, object]:
 def main(argv: list[str] | None = None) -> int:
     parser = build_parser()
     args = parser.parse_args(argv)
+    # torch + matplotlib 同载 libiomp5md.dll 会触发 OMP Error #15（无害修复）
+    os.environ.setdefault("KMP_DUPLICATE_LIB_OK", "TRUE")
     get_logger(
         base_path=paths.LOGGING_DIR,
         log_type="evaluation",
