@@ -1,6 +1,9 @@
 import argparse
 import importlib
+import tempfile
 import unittest
+from pathlib import Path
+from unittest.mock import patch
 
 from od_platform.agent.schema import ToolSchema
 from od_platform.agent.tools import (
@@ -213,6 +216,26 @@ class TestDefaultRegistry(unittest.TestCase):
             self.assertIn("[train]", result.summary)
         else:
             self.assertIn("没有找到运行产物", result.summary)
+
+    def test_artifact_summary_missing_map50_95_no_crash(self) -> None:
+        """results.csv 有 map50 但 map50_95 缺失时不应抛 TypeError（回归测试）。"""
+        from od_platform.agent.tools import _artifact_summary
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            run_dir = Path(temp_dir) / "run"
+            run_dir.mkdir()
+            # 构造仅含 map50 的 summary（模拟 map50_95 缺失）
+            (run_dir / "results.csv").write_text(
+                "epoch,metrics/mAP50(B)\n1,0.5\n",
+                encoding="utf-8",
+            )
+            with patch(
+                "od_platform.training.metrics.summarize_results_csv",
+                return_value={"epochs": 1, "last": {"map50": 0.5, "map50_95": None}},
+            ):
+                summary = _artifact_summary(run_dir)
+            self.assertIn("mAP50=0.5000", summary)
+            self.assertNotIn("mAP50-95=None", summary)
 
 
 if __name__ == "__main__":

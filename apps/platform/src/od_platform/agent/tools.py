@@ -429,9 +429,11 @@ def _artifact_summary(run_dir: Path) -> str:
             map50 = last.get("map50")
             map50_95 = last.get("map50_95")
             if isinstance(map50, (int, float)):
-                return f"训练 {epochs} 轮, mAP50={map50:.4f}, mAP50-95={map50_95:.4f}"
+                if isinstance(map50_95, (int, float)):
+                    return f"训练 {epochs} 轮, mAP50={map50:.4f}, mAP50-95={map50_95:.4f}"
+                return f"训练 {epochs} 轮, mAP50={map50:.4f}"
             return f"训练 {epochs} 轮"
-        except (OSError, ValueError, IndexError):
+        except (OSError, ValueError, IndexError, TypeError):
             return "results.csv 读取失败"
 
     audit = run_dir / "odp_audit.json"
