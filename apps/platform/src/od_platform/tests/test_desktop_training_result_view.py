@@ -61,6 +61,7 @@ class TestTrainingResultViewSmoke(unittest.TestCase):
 
             with patch.object(service_paths, "ROOT_DIR", root):
                 view = TrainingResultView()
+                view.refresh()  # 视图构造不自动刷新，由外部触发
                 self.assertEqual(view.result_list.count(), 1)
 
     def test_select_shows_summary(self) -> None:
@@ -73,6 +74,7 @@ class TestTrainingResultViewSmoke(unittest.TestCase):
 
             with patch.object(service_paths, "ROOT_DIR", root):
                 view = TrainingResultView()
+                view.refresh()  # 视图构造不自动刷新，由外部触发
                 view.result_list.setCurrentRow(0)
                 self.assertIn("训练结果摘要", view.detail.toPlainText())
 
