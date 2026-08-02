@@ -110,6 +110,38 @@ class TestAgentOrchestrator(unittest.TestCase):
         self.assertEqual(events[0].kind, "error")
         self.assertIn("限流", events[0].content or "")
 
+    def test_event_metadata_filled(self) -> None:
+        """事件携带 event_id/session_id/turn_id/timestamp/status 等元数据。"""
+        client = FakeClient(
+            [
+                _tool_response([{"id": "c1", "function": {"name": "no-such-tool", "arguments": "{}"}}]),
+                _text_response("完成"),
+            ]
+        )
+        events = _make_orchestrator(client).run("执行")
+        tool_start = next(event for event in events if event.kind == "tool_start")
+        self.assertTrue(tool_start.event_id)
+        self.assertEqual(tool_start.turn_id, 1)
+        self.assertTrue(tool_start.timestamp)
+        self.assertEqual(tool_start.status, "running")
+        tool_result = next(event for event in events if event.kind == "tool_result")
+        self.assertEqual(tool_result.status, "failed")
+        self.assertIsNotNone(tool_result.duration_ms)
+        done = events[-1]
+        self.assertEqual(done.kind, "done")
+        self.assertEqual(done.status, "success")
+
+    def test_requires_user_action_flag(self) -> None:
+        """风险确认被拒的工具结果标记 requires_user_action。"""
+        registry = ToolRegistry()
+        import od_platform.tests._agent_mini_cli as mini_cli
+
+        registry.register_cli(mini_cli.__name__, risk_level="write_files")
+        result = registry.execute("mini", {"input": "ok"})
+        self.assertFalse(result.ok)
+        self.assertTrue(result.requires_user_action)
+        self.assertIsNotNone(result.duration_ms)
+
     def test_assistant_message_content_normalized(self) -> None:
         """带 tool_calls 的 assistant 消息 content=None 应规范化为空字符串。"""
         client = FakeClient(

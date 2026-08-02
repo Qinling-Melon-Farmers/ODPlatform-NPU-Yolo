@@ -66,6 +66,8 @@ class ToolResult:
         exit_code: CLI 退出码；服务工具为 None。
         summary:   给 LLM 的观察文本（截断）。
         details:   完整日志尾部（供人工排查）。
+        requires_user_action: 是否因风险确认/授权被拒（TUI/GUI 据此提示用户）。
+        duration_ms: 执行耗时（毫秒）。
     """
 
     name: str
@@ -74,6 +76,8 @@ class ToolResult:
     exit_code: int | None
     summary: str
     details: str
+    requires_user_action: bool = False
+    duration_ms: int | None = None
 
 
 ServiceHandler = Callable[[dict], ToolResult]
@@ -257,13 +261,14 @@ class ToolRegistry:
             执行结果（失败也返回 ToolResult，不抛异常）。
         """
         safe_arguments = _redact_arguments(arguments)
+        started = time.perf_counter()
         if name in self._service_entries:
             entry = self._service_entries[name]
             try:
-                return entry.handler(dict(arguments))
+                result = entry.handler(dict(arguments))
             except Exception as exc:  # noqa: BLE001 - 边界层统一转为失败结果
                 logger.exception("服务工具 %s 执行异常", name)
-                return ToolResult(
+                result = ToolResult(
                     name=name,
                     arguments=safe_arguments,
                     ok=False,
@@ -271,29 +276,37 @@ class ToolRegistry:
                     summary=f"工具 {name} 执行异常: {type(exc).__name__}: {exc}",
                     details="",
                 )
+            return _with_duration(result, started)
 
         entry = self._cli_entries.get(name)
         if entry is None:
-            return ToolResult(
-                name=name,
-                arguments=safe_arguments,
-                ok=False,
-                exit_code=None,
-                summary=f"未知工具: {name}",
-                details="",
+            return _with_duration(
+                ToolResult(
+                    name=name,
+                    arguments=safe_arguments,
+                    ok=False,
+                    exit_code=None,
+                    summary=f"未知工具: {name}",
+                    details="",
+                ),
+                started,
             )
 
         # 安全模式下带 dry-run 标志的工具自动放行（dry-run 无副作用）
         auto_approved = self.dry_run and entry.dry_run_flag
         if entry.risk_level != RISK_READ_ONLY and name not in self.confirmed_tools and not auto_approved:
             label = RISK_LABELS.get(entry.risk_level, entry.risk_level)
-            return ToolResult(
-                name=name,
-                arguments=safe_arguments,
-                ok=False,
-                exit_code=None,
-                summary=f"工具 {name} 属于「{label}」风险等级，需要用户确认后才可执行，请先征得用户同意",
-                details="",
+            return _with_duration(
+                ToolResult(
+                    name=name,
+                    arguments=safe_arguments,
+                    ok=False,
+                    exit_code=None,
+                    summary=f"工具 {name} 属于「{label}」风险等级，需要用户确认后才可执行，请先征得用户同意",
+                    details="",
+                    requires_user_action=True,
+                ),
+                started,
             )
 
         argv = _argv_from_arguments(entry.schema, arguments)
@@ -305,13 +318,16 @@ class ToolRegistry:
         else:
             output = _run_cli(entry.module, entry.entry, argv, executor=self.executor)
         summary = _summarize_output(output.output)
-        return ToolResult(
-            name=name,
-            arguments=safe_arguments,
-            ok=output.exit_code == 0,
-            exit_code=output.exit_code,
-            summary=summary or f"工具 {name} 无输出，退出码 {output.exit_code}",
-            details=output.details[:DETAILS_LIMIT],
+        return _with_duration(
+            ToolResult(
+                name=name,
+                arguments=safe_arguments,
+                ok=output.exit_code == 0,
+                exit_code=output.exit_code,
+                summary=summary or f"工具 {name} 无输出，退出码 {output.exit_code}",
+                details=output.details[:DETAILS_LIMIT],
+            ),
+            started,
         )
 
     def confirm(self, name: str) -> None:
@@ -552,6 +568,21 @@ def _artifact_summary(run_dir: Path) -> str:
             return "质检报告读取失败"
 
     return "无指标文件"
+
+
+def _with_duration(result: ToolResult, started: float) -> ToolResult:
+    """填充执行耗时（毫秒）。"""
+    duration_ms = int((time.perf_counter() - started) * 1000)
+    return ToolResult(
+        name=result.name,
+        arguments=result.arguments,
+        ok=result.ok,
+        exit_code=result.exit_code,
+        summary=result.summary,
+        details=result.details,
+        requires_user_action=result.requires_user_action,
+        duration_ms=duration_ms,
+    )
 
 
 def _redact_arguments(arguments: dict) -> dict:

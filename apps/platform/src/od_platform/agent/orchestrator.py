@@ -12,8 +12,10 @@ from __future__ import annotations
 
 import json
 import logging
+import time
 from collections.abc import Iterator
-from dataclasses import dataclass
+from dataclasses import dataclass, field
+from datetime import datetime, timezone
 from typing import Any
 
 from od_platform.agent.client import APIError, OpenAIClient
@@ -65,19 +67,37 @@ class AgentConfig:
 
 @dataclass
 class AgentEvent:
-    """一次 Agent 运行中的事件（供 CLI/桌面端渲染）。
+    """一次 Agent 运行中的事件（供 CLI/TUI/GUI 渲染与历史回放）。
 
     Attributes:
         kind:        ``message`` / ``tool_start`` / ``tool_result`` / ``done`` / ``error``。
         content:     消息文本或工具参数 JSON。
         tool_name:   工具名（工具事件）。
         tool_result: 工具执行结果（tool_result 事件）。
+        event_id:    事件唯一 ID（按轮递增）。
+        session_id:  会话 ID（无会话时为空）。
+        turn_id:     对话轮次（用户输入计数，从 1 起）。
+        timestamp:   ISO 时间戳。
+        status:      状态标记（running/success/failed/cancelled 等）。
+        duration_ms: 工具执行耗时（工具事件）。
+        artifact_paths: 事件关联的产物路径（预留，TUI 产物面板用）。
+        requires_user_action: 需要用户确认/授权（TUI/GUI 据此提示）。
+        error_code:  错误码（错误事件）。
     """
 
     kind: str
     content: str | None = None
     tool_name: str | None = None
     tool_result: ToolResult | None = None
+    event_id: str = ""
+    session_id: str = ""
+    turn_id: int = 0
+    timestamp: str = ""
+    status: str = ""
+    duration_ms: int | None = None
+    artifact_paths: list[str] = field(default_factory=list)
+    requires_user_action: bool = False
+    error_code: str | None = None
 
 
 class AgentOrchestrator:
@@ -106,6 +126,20 @@ class AgentOrchestrator:
         self.config = config
         self.system_prompt = system_prompt
         self.session = session
+        self._event_counter = 0
+        self._turn_counter = 0
+
+    def _event(self, kind: str, **kwargs: Any) -> AgentEvent:
+        """构造带元数据（事件 ID/会话/轮次/时间戳）的事件。"""
+        self._event_counter += 1
+        return AgentEvent(
+            kind=kind,
+            event_id=str(self._event_counter),
+            session_id=self.session.session_id if self.session is not None else "",
+            turn_id=self._turn_counter,
+            timestamp=datetime.now(timezone.utc).isoformat(timespec="seconds"),
+            **kwargs,
+        )
 
     def run(self, user_message: str) -> list[AgentEvent]:
         """阻塞式执行一轮对话，返回全部事件。"""
@@ -120,6 +154,7 @@ class AgentOrchestrator:
         Yields:
             按发生顺序的事件；最终以 ``done`` 事件结束（携带最终文本）。
         """
+        self._turn_counter += 1
         if self.session is not None:
             history = self.session.to_history()
             if not history or history[0].get("role") != "system":
@@ -144,7 +179,11 @@ class AgentOrchestrator:
                 )
             except APIError as exc:
                 logger.error("Agent API 调用失败: %s", exc)
-                yield AgentEvent(kind="error", content=str(exc))
+                yield self._event(
+                    "error",
+                    content=str(exc),
+                    error_code=f"api_error_{exc.status}" if exc.status else "api_error",
+                )
                 return
 
             choices = response.get("choices") or []
@@ -158,7 +197,7 @@ class AgentOrchestrator:
             if not tool_calls:
                 final_text = assistant_message.get("content") or ""
                 if final_text:
-                    yield AgentEvent(kind="message", content=final_text)
+                    yield self._event("message", content=final_text, status="success")
                 break
 
             for call in tool_calls:
@@ -172,11 +211,13 @@ class AgentOrchestrator:
                 if not isinstance(arguments, dict):
                     arguments = {}
 
-                yield AgentEvent(
-                    kind="tool_start",
+                yield self._event(
+                    "tool_start",
                     tool_name=name,
                     content=json.dumps(arguments, ensure_ascii=False),
+                    status="running",
                 )
+                started = time.perf_counter()
                 result = self.registry.execute(name, arguments)
                 messages.append(
                     {
@@ -185,7 +226,15 @@ class AgentOrchestrator:
                         "content": result.summary,
                     }
                 )
-                yield AgentEvent(kind="tool_result", tool_name=name, tool_result=result)
+                yield self._event(
+                    "tool_result",
+                    tool_name=name,
+                    tool_result=result,
+                    status="success" if result.ok else "failed",
+                    duration_ms=result.duration_ms
+                    or int((time.perf_counter() - started) * 1000),
+                    requires_user_action=result.requires_user_action,
+                )
         else:
             # 迭代上限耗尽：追加不带工具的"直接总结"轮
             logger.warning("达到最大迭代次数 %d，请求模型直接总结", self.config.max_iterations)
@@ -197,20 +246,24 @@ class AgentOrchestrator:
                 )
             except APIError as exc:
                 logger.error("Agent 总结轮 API 调用失败: %s", exc)
-                yield AgentEvent(kind="error", content=str(exc))
+                yield self._event(
+                    "error",
+                    content=str(exc),
+                    error_code=f"api_error_{exc.status}" if exc.status else "api_error",
+                )
                 return
             choices = response.get("choices") or []
             if not choices:
-                yield AgentEvent(kind="error", content="API 返回畸形响应: 缺少 choices")
+                yield self._event("error", content="API 返回畸形响应: 缺少 choices", error_code="malformed_response")
                 return
             summary_message = choices[0].get("message") or {}
             final_text = summary_message.get("content") or "（模型未返回总结文本）"
             messages.append({**summary_message, "content": final_text})
-            yield AgentEvent(kind="message", content=final_text)
+            yield self._event("message", content=final_text, status="success")
 
         if self.session is not None:
             for message in messages[start_index:]:
                 self.session.append(message)
             self.session.save()
 
-        yield AgentEvent(kind="done", content=final_text)
+        yield self._event("done", content=final_text, status="success")
