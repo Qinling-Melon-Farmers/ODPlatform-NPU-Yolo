@@ -977,6 +977,8 @@ class MainWindow(QMainWindow):
         self.task_stop_button.clicked.connect(self._stop_task)
         # AI 助手页与 AI 任务页共享 API 配置（双向同步，防重复填写）
         self._sync_agent_config_fields()
+        # AI 助手状态转发到主窗口状态栏
+        self.agent_view.status_changed.connect(self._set_status)
         self._switch_task_page(self.desktop_task_combo.currentIndex())
         self._refresh_task_preview()
         self._refresh_model_catalog()

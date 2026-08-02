@@ -2,9 +2,8 @@
 
 from __future__ import annotations
 
-from PySide6.QtCore import QObject, QThread, Signal, Slot
-
 from agent_worker import AgentWorker
+from PySide6.QtCore import QObject, QThread, Signal, Slot
 from services.session_store_adapter import SessionStoreAdapter
 
 

@@ -5,10 +5,10 @@
 
 from __future__ import annotations
 
+from controllers.agent_controller import AgentController
 from PySide6.QtCore import Qt, Signal
 from PySide6.QtWidgets import (
     QCheckBox,
-    QComboBox,
     QFormLayout,
     QGroupBox,
     QHBoxLayout,
@@ -22,8 +22,6 @@ from PySide6.QtWidgets import (
     QVBoxLayout,
     QWidget,
 )
-
-from controllers.agent_controller import AgentController
 from services.session_store_adapter import SessionStoreAdapter
 
 
@@ -32,9 +30,11 @@ class AgentChatView(QWidget):
 
     Signals:
         config_changed: (base_url, model, api_key) 配置字段变更（供外部同步）。
+        status_changed: (状态, 详情) 供主窗口状态栏显示。
     """
 
     config_changed = Signal(str, str, str)
+    status_changed = Signal(str, str)
 
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
@@ -161,7 +161,7 @@ class AgentChatView(QWidget):
         model = self.model_edit.text().strip()
         api_key = self.api_key_edit.text().strip() or None
         if not message:
-            self._append(f"⚠ 请输入任务描述")
+            self._append("⚠ 请输入任务描述")
             return
         if not base_url or not model:
             self._append("⚠ 请填写 API 地址与模型名")
@@ -266,7 +266,8 @@ class AgentChatView(QWidget):
         self._refresh_session_list()
 
     def _on_status_changed(self, state: str, detail: str) -> None:
-        self.setWindowTitle(f"AI 助手 - {state}")
+        # 转发给主窗口状态栏（内嵌 widget 不修改顶层窗口标题）
+        self.status_changed.emit(state, detail)
 
     def _on_busy_changed(self, busy: bool) -> None:
         self.send_button.setEnabled(not busy)
