@@ -42,6 +42,11 @@ def build_parser() -> argparse.ArgumentParser:
         help="不调用 LLM，打印工具 schema JSON 后退出",
     )
     parser.add_argument("--max-iterations", type=int, default=8, help="最大工具调用轮数（默认 8）")
+    parser.add_argument(
+        "--tui",
+        action="store_true",
+        help="使用 TUI 界面（需安装 textual：pip install textual）；未安装时回退交互模式",
+    )
     parser.add_argument("--verbose", "-v", action="store_true", help="输出 DEBUG 日志")
     return parser
 
@@ -99,6 +104,8 @@ def main(argv: list[str] | None = None) -> int:
 
         if args.task:
             return _run_once(orchestrator, args.task, logger)
+        if args.tui:
+            return _run_tui(client=client, registry=registry, config=config, session=session, logger=logger)
         return _run_repl(orchestrator, logger, client=client, registry=registry, config=config)
     except KeyboardInterrupt:
         logger.warning("用户中断")
@@ -106,6 +113,24 @@ def main(argv: list[str] | None = None) -> int:
     except Exception:
         logger.exception("未预期异常：CLI 或工具自身失败")
         return EXIT_TOOL_ERROR
+
+
+def _run_tui(
+    *,
+    client: OpenAIClient,
+    registry: ToolRegistry,
+    config: AgentConfig,
+    session: AgentSession | None,
+    logger: logging.Logger,
+) -> int:
+    """TUI 模式；textual 未安装时回退交互 REPL。"""
+    try:
+        from od_platform.agent.tui.app import run_tui
+    except ImportError:
+        logger.warning("TUI 需要 textual（pip install textual），已回退交互模式")
+        orchestrator = AgentOrchestrator(client=client, registry=registry, config=config, session=session)
+        return _run_repl(orchestrator, logger, client=client, registry=registry, config=config)
+    return run_tui(client=client, registry=registry, config=config, session=session)
 
 
 def _run_once(orchestrator: AgentOrchestrator, task: str, logger: logging.Logger) -> int:
