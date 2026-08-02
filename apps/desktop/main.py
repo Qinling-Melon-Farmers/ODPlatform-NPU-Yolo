@@ -153,19 +153,6 @@ class MainWindow(QMainWindow):
         self.prev_plot_button = QPushButton("上一张图")
         self.next_plot_button = QPushButton("下一张图")
 
-        self.model_catalog_list = QListWidget()
-        self.model_catalog_filter_edit = QLineEdit("")
-        self.model_catalog_filter_edit.setPlaceholderText("按名称/描述筛选模型")
-        # 系列下拉项由 _sync_model_family_combos() 从 model_catalog 动态填充
-        self.model_catalog_family_combo = QComboBox()
-        self.model_catalog_recommend_edit = QLineEdit("")
-        self.model_catalog_recommend_edit.setPlaceholderText("如：最快 / 最准 / yolov8 最准")
-        self.model_catalog_recommend_button = QPushButton("推荐")
-        self.model_catalog_apply_train_button = QPushButton("应用到模型训练")
-        self.model_catalog_apply_infer_button = QPushButton("应用到模型推理")
-        self.model_catalog_detail = QTextEdit()
-        self.model_catalog_detail.setReadOnly(True)
-
         self._build_layout()
         self._connect_signals()
         self._refresh_all_result_tabs()
@@ -236,7 +223,9 @@ class MainWindow(QMainWindow):
         agent_view = self._build_agent_tab()
         self.agent_view = agent_view
         tabs.addTab(agent_view, "AI 助手")
-        tabs.addTab(self._build_model_catalog_tab(), "模型目录")
+        model_catalog_view = self._build_model_catalog_tab()
+        self.model_catalog_view = model_catalog_view
+        tabs.addTab(model_catalog_view, "模型目录")
         tabs.addTab(self._build_training_tab(), "训练结果")
         tabs.addTab(self._build_annotation_review_tab(), "标注复核")
         task_launcher_view = self._build_task_launcher_tab()
@@ -396,154 +385,9 @@ class MainWindow(QMainWindow):
         return TaskLauncherView()
 
     def _build_model_catalog_tab(self) -> QWidget:
-        refresh_button = QPushButton("刷新")
-        recommend_row = QWidget()
-        recommend_layout = QHBoxLayout(recommend_row)
-        recommend_layout.setContentsMargins(0, 0, 0, 0)
-        recommend_layout.addWidget(QLabel("推荐"))
-        recommend_layout.addWidget(self.model_catalog_recommend_edit)
-        recommend_layout.addWidget(self.model_catalog_recommend_button)
+        from views.model_catalog_view import ModelCatalogView
 
-        apply_row = QWidget()
-        apply_layout = QHBoxLayout(apply_row)
-        apply_layout.setContentsMargins(0, 0, 0, 0)
-        apply_layout.addWidget(self.model_catalog_apply_train_button)
-        apply_layout.addWidget(self.model_catalog_apply_infer_button)
-        apply_layout.addStretch(1)
-
-        title_label = QLabel("模型目录")
-        title_label.setObjectName("SectionTitle")
-        hint_label = QLabel("浏览内置 YOLO 系列模型，支持自然语言推荐，可应用到训练/推理。")
-        hint_label.setObjectName("HintText")
-
-        left = QVBoxLayout()
-        left.addWidget(title_label)
-        left.addWidget(hint_label)
-        left.addWidget(recommend_row)
-        filter_row = QWidget()
-        filter_layout = QHBoxLayout(filter_row)
-        filter_layout.setContentsMargins(0, 0, 0, 0)
-        filter_layout.addWidget(QLabel("系列"))
-        filter_layout.addWidget(self.model_catalog_family_combo)
-        filter_layout.addWidget(self.model_catalog_filter_edit)
-        filter_layout.addWidget(refresh_button)
-        left.addWidget(filter_row)
-        left.addWidget(apply_row)
-        left.addWidget(self.model_catalog_list)
-
-        splitter = QSplitter(Qt.Orientation.Horizontal)
-        list_container = QWidget()
-        list_container.setLayout(left)
-        splitter.addWidget(list_container)
-        splitter.addWidget(self.model_catalog_detail)
-        splitter.setSizes([420, 820])
-
-        page = QWidget()
-        root = QHBoxLayout(page)
-        root.addWidget(splitter)
-        return page
-
-    def _refresh_model_catalog(self) -> None:
-        from od_platform.model_catalog import list_models, recommend_model
-
-        self._sync_model_family_combos()
-
-        family = self.model_catalog_family_combo.currentText()
-        family = None if family == "全部" else family
-
-        if self.model_catalog_recommend_edit.text().strip():
-            models = recommend_model(
-                self.model_catalog_recommend_edit.text().strip(),
-                family=family,
-                limit=20,
-            )
-        else:
-            models = list_models(family=family)
-
-        query = self.model_catalog_filter_edit.text().strip().lower()
-        if query:
-            models = [info for info in models if query in info.name.lower() or query in info.description.lower()]
-
-        self.model_catalog_list.clear()
-        for info in models:
-            item_text = f"{info.name}  [{info.family} {info.variant} | {info.size_category}]"
-            self.model_catalog_list.addItem(item_text)
-            self.model_catalog_list.item(self.model_catalog_list.count() - 1).setData(
-                Qt.ItemDataRole.UserRole, info.name
-            )
-        if self.model_catalog_list.count():
-            self.model_catalog_list.setCurrentRow(0)
-        else:
-            self.model_catalog_detail.setPlainText("没有匹配的模型。")
-        self._set_status("就绪", f"模型目录 {len(models)} 个")
-
-    def _sync_model_family_combos(self) -> None:
-        """从 model_catalog 动态同步系列下拉项（S4 拆分后仅同步自身视图）。"""
-        from od_platform.model_catalog import list_families
-
-        families = list_families()
-        combo = self.model_catalog_family_combo
-        current = combo.currentText()
-        combo.blockSignals(True)
-        combo.clear()
-        combo.addItems(["全部", *families])
-        combo.setCurrentText(current if current in ("全部", *families) else "全部")
-        combo.blockSignals(False)
-        # 任务页「列出模型」系列下拉同步（S4 后改走 families_changed 信号）
-        self.task_launcher_view.set_model_families(families)
-
-    def _show_model_catalog_item(self, item) -> None:
-        if item is None:
-            return
-        from od_platform.model_catalog import get_model_info
-
-        info = get_model_info(item.data(Qt.ItemDataRole.UserRole))
-        if info is None:
-            self.model_catalog_detail.setPlainText("无法读取模型元数据。")
-            return
-        metric_lines = "\n".join(f"{key:<12}: {value}" for key, value in info.metrics.items())
-        lines = [
-            "模型详情",
-            "=" * 60,
-            f"名称          : {info.name}",
-            f"系列          : {info.family}",
-            f"变体          : {info.variant}",
-            f"任务          : {info.task}",
-            f"后端          : {info.backend}",
-            f"尺寸档位      : {info.size_category}",
-            f"参数量        : {info.params_m} M",
-            f"CPU 耗时      : {info.speed_cpu_ms} ms",
-            "",
-            "指标",
-            "-" * 60,
-            metric_lines,
-            "",
-            "描述",
-            "-" * 60,
-            info.description,
-        ]
-        self.model_catalog_detail.setPlainText("\n".join(lines))
-
-    def _apply_model_to_train(self) -> None:
-        item = self.model_catalog_list.currentItem()
-        if item is None:
-            self._set_status("提示", "先在模型目录中选择一个模型")
-            return
-        model_name = item.data(Qt.ItemDataRole.UserRole)
-        self.train_model_edit.setText(model_name)
-        self.tabs.setCurrentIndex(self._task_tab_index())
-        self.task_launcher_view.select_task("模型训练")
-        self._set_status("就绪", f"已应用到模型训练: {model_name}")
-
-    def _apply_model_to_infer(self) -> None:
-        item = self.model_catalog_list.currentItem()
-        if item is None:
-            self._set_status("提示", "先在模型目录中选择一个模型")
-            return
-        model_name = item.data(Qt.ItemDataRole.UserRole)
-        self.model_edit.setText(model_name)
-        self.tabs.setCurrentIndex(0)  # 推理 tab
-        self._set_status("就绪", f"已应用到模型推理: {model_name}")
+        return ModelCatalogView()
 
     def _build_training_tab(self) -> QWidget:
         refresh_button = QPushButton("刷新")
@@ -604,12 +448,11 @@ class MainWindow(QMainWindow):
         self.eval_list.currentItemChanged.connect(lambda current, _previous: self._show_eval_item(current))
         self.validation_list.currentItemChanged.connect(lambda current, _previous: self._show_validation_item(current))
         self.training_list.currentItemChanged.connect(lambda current, _previous: self._show_training_item(current))
-        self.model_catalog_list.currentItemChanged.connect(lambda current, _previous: self._show_model_catalog_item(current))
-        self.model_catalog_recommend_button.clicked.connect(self._refresh_model_catalog)
-        self.model_catalog_apply_train_button.clicked.connect(self._apply_model_to_train)
-        self.model_catalog_apply_infer_button.clicked.connect(self._apply_model_to_infer)
-        self.model_catalog_filter_edit.textChanged.connect(lambda _text: self._refresh_model_catalog())
-        self.model_catalog_family_combo.currentTextChanged.connect(lambda _text: self._refresh_model_catalog())
+        # 模型目录视图跨视图连接
+        self.model_catalog_view.applied_to_train.connect(self._on_model_applied_to_train)
+        self.model_catalog_view.applied_to_infer.connect(self._on_model_applied_to_infer)
+        self.model_catalog_view.families_changed.connect(self.task_launcher_view.set_model_families)
+        self.model_catalog_view.status_changed.connect(self._set_status)
         self.eval_filter_edit.textChanged.connect(lambda _text: self._refresh_evaluation_results())
         self.validation_filter_edit.textChanged.connect(lambda _text: self._refresh_validation_reports())
         self.training_filter_edit.textChanged.connect(lambda _text: self._refresh_training_results())
@@ -621,7 +464,7 @@ class MainWindow(QMainWindow):
         self._sync_agent_config_fields()
         # AI 助手状态转发到主窗口状态栏
         self.agent_view.status_changed.connect(self._set_status)
-        self._refresh_model_catalog()
+        self.model_catalog_view.refresh()
 
     @Slot()
     def _start_worker(self) -> None:
@@ -763,7 +606,22 @@ class MainWindow(QMainWindow):
     def _open_model_catalog(self) -> None:
         """跳转到模型目录标签页并刷新。"""
         self.tabs.setCurrentIndex(self._model_catalog_tab_index())
-        self._refresh_model_catalog()
+        self.model_catalog_view.refresh()
+
+    @Slot(str)
+    def _on_model_applied_to_train(self, name: str) -> None:
+        """模型目录一键应用：回填训练页并切换。"""
+        self.task_launcher_view.set_train_model(name)
+        self.task_launcher_view.select_task("模型训练")
+        self.tabs.setCurrentIndex(self._task_tab_index())
+        self._set_status("就绪", f"已应用到模型训练: {name}")
+
+    @Slot(str)
+    def _on_model_applied_to_infer(self, name: str) -> None:
+        """模型目录一键应用：回填推理页并切换。"""
+        self.model_edit.setText(name)
+        self.tabs.setCurrentIndex(0)
+        self._set_status("就绪", f"已应用到模型推理: {name}")
 
     def _model_catalog_tab_index(self) -> int:
         for index in range(self.tabs.count()):
