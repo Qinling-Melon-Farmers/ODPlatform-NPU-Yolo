@@ -141,18 +141,6 @@ class MainWindow(QMainWindow):
         self.validation_filter_edit.setPlaceholderText("筛选质检报告")
         self.validation_detail = QTextEdit()
         self.validation_detail.setReadOnly(True)
-        self.training_list = QListWidget()
-        self.training_filter_edit = QLineEdit("")
-        self.training_filter_edit.setPlaceholderText("筛选训练结果")
-        self.training_detail = QTextEdit()
-        self.training_detail.setReadOnly(True)
-        self.training_plot_label = QLabel("选择训练结果后显示曲线图")
-        self.training_plot_label.setObjectName("PreviewPane")
-        self.training_plot_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self.training_plot_label.setMinimumHeight(300)
-        self.prev_plot_button = QPushButton("上一张图")
-        self.next_plot_button = QPushButton("下一张图")
-
         self._build_layout()
         self._connect_signals()
         self._refresh_all_result_tabs()
@@ -226,7 +214,9 @@ class MainWindow(QMainWindow):
         model_catalog_view = self._build_model_catalog_tab()
         self.model_catalog_view = model_catalog_view
         tabs.addTab(model_catalog_view, "模型目录")
-        tabs.addTab(self._build_training_tab(), "训练结果")
+        training_view = self._build_training_tab()
+        self.training_view = training_view
+        tabs.addTab(training_view, "训练结果")
         tabs.addTab(self._build_annotation_review_tab(), "标注复核")
         task_launcher_view = self._build_task_launcher_tab()
         self.task_launcher_view = task_launcher_view
@@ -390,55 +380,9 @@ class MainWindow(QMainWindow):
         return ModelCatalogView()
 
     def _build_training_tab(self) -> QWidget:
-        refresh_button = QPushButton("刷新")
-        open_button = QPushButton("打开训练目录")
-        refresh_button.clicked.connect(self._refresh_training_results)
-        open_button.clicked.connect(self._open_selected_training)
-        self.prev_plot_button.clicked.connect(self._show_previous_training_plot)
-        self.next_plot_button.clicked.connect(self._show_next_training_plot)
+        from views.training_result_view import TrainingResultView
 
-        title_label = QLabel("训练结果")
-        title_label.setObjectName("SectionTitle")
-        hint_label = QLabel("浏览 YOLO 训练 run、最后一轮指标、权重和训练曲线。")
-        hint_label.setObjectName("HintText")
-
-        buttons = QHBoxLayout()
-        buttons.addWidget(refresh_button)
-        buttons.addWidget(open_button)
-        buttons.addStretch(1)
-
-        left = QVBoxLayout()
-        left.addWidget(title_label)
-        left.addWidget(hint_label)
-        left.addWidget(self.training_filter_edit)
-        left.addLayout(buttons)
-        left.addWidget(self.training_list)
-
-        plot_buttons = QHBoxLayout()
-        plot_buttons.addWidget(self.prev_plot_button)
-        plot_buttons.addWidget(self.next_plot_button)
-        plot_buttons.addStretch(1)
-
-        right = QVBoxLayout()
-        right.addWidget(self.training_detail, stretch=1)
-        right.addWidget(self.training_plot_label, stretch=1)
-        right.addLayout(plot_buttons)
-
-        list_container = QWidget()
-        list_container.setLayout(left)
-        detail_container = QWidget()
-        detail_container.setLayout(right)
-
-        splitter = QSplitter(Qt.Orientation.Horizontal)
-        splitter.addWidget(list_container)
-        splitter.addWidget(detail_container)
-        splitter.setSizes([360, 900])
-
-        page = QWidget()
-        root = QHBoxLayout(page)
-        root.addWidget(splitter)
-        return page
-
+        return TrainingResultView()
 
     def _connect_signals(self) -> None:
         self.start_button.clicked.connect(self._start_worker)
@@ -447,7 +391,6 @@ class MainWindow(QMainWindow):
         self.open_output_button.clicked.connect(self._open_last_output_dir)
         self.eval_list.currentItemChanged.connect(lambda current, _previous: self._show_eval_item(current))
         self.validation_list.currentItemChanged.connect(lambda current, _previous: self._show_validation_item(current))
-        self.training_list.currentItemChanged.connect(lambda current, _previous: self._show_training_item(current))
         # 模型目录视图跨视图连接
         self.model_catalog_view.applied_to_train.connect(self._on_model_applied_to_train)
         self.model_catalog_view.applied_to_infer.connect(self._on_model_applied_to_infer)
@@ -455,7 +398,6 @@ class MainWindow(QMainWindow):
         self.model_catalog_view.status_changed.connect(self._set_status)
         self.eval_filter_edit.textChanged.connect(lambda _text: self._refresh_evaluation_results())
         self.validation_filter_edit.textChanged.connect(lambda _text: self._refresh_validation_reports())
-        self.training_filter_edit.textChanged.connect(lambda _text: self._refresh_training_results())
         # 任务启动页（TaskLauncherView）跨视图连接
         self.task_launcher_view.status_changed.connect(self._set_status)
         self.task_launcher_view.task_finished.connect(self._refresh_all_result_tabs)
@@ -669,7 +611,7 @@ class MainWindow(QMainWindow):
     def _refresh_all_result_tabs(self) -> None:
         self._refresh_evaluation_results()
         self._refresh_validation_reports()
-        self._refresh_training_results()
+        self.training_view.refresh()
 
     def _refresh_evaluation_results(self) -> None:
         paths = sorted((ROOT_DIR / "runs" / "evaluation").glob("**/odp_audit.json"), reverse=True)
@@ -686,14 +628,6 @@ class MainWindow(QMainWindow):
         self._fill_list(self.validation_list, paths)
         if self.validation_list.count() == 0:
             self.validation_detail.setPlainText("暂无数据质检报告。运行 odp-validate 后会在这里显示。")
-
-    def _refresh_training_results(self) -> None:
-        result_dirs = sorted({path.parent for path in (ROOT_DIR / "runs").glob("**/results.csv")}, reverse=True)
-        result_dirs = _filter_paths(result_dirs, self.training_filter_edit.text())
-        self._fill_list(self.training_list, result_dirs)
-        if self.training_list.count() == 0:
-            self.training_detail.setPlainText("暂无训练结果。运行 odp-train 后会在这里显示。")
-            self.training_plot_label.setText("暂无训练曲线")
 
     @staticmethod
     def _fill_list(list_widget: QListWidget, paths: list[Path]) -> None:
@@ -766,90 +700,11 @@ class MainWindow(QMainWindow):
             lines.extend(f"- {item}" for item in fix_items[:50])
         self.validation_detail.setPlainText("\n".join(lines))
 
-    def _show_training_item(self, item) -> None:
-        if item is None:
-            return
-        run_dir = Path(item.data(Qt.ItemDataRole.UserRole))
-        results_csv = run_dir / "results.csv"
-        lines = ["训练结果摘要", "=" * 60, f"训练目录: {run_dir}", ""]
-        if results_csv.exists():
-            rows = _read_csv_rows(results_csv)
-            lines.append(f"results.csv: {results_csv}")
-            lines.append(f"epoch 数   : {len(rows)}")
-            if rows:
-                lines.extend(["", "最后一轮指标", "-" * 60])
-                last = rows[-1]
-                lines.extend(
-                    _format_mapping(
-                        last,
-                        preferred=(
-                            "epoch",
-                            "train/box_loss",
-                            "val/box_loss",
-                            "metrics/precision(B)",
-                            "metrics/recall(B)",
-                            "metrics/mAP50(B)",
-                            "metrics/mAP50-95(B)",
-                        ),
-                    )
-                )
-        else:
-            lines.append("未找到 results.csv。")
-
-        weights = sorted((run_dir / "weights").glob("*.pt"))
-        if weights:
-            lines.extend(["", "权重文件", "-" * 60])
-            lines.extend(f"- {path.name}" for path in weights)
-        plots = sorted(run_dir.glob("*.png"))[:20]
-        if plots:
-            lines.extend(["", "可用图表", "-" * 60])
-            lines.extend(f"- {path.name}" for path in plots)
-        self._training_plots = plots
-        self._training_plot_index = 0
-        self._show_training_plot()
-        self.training_detail.setPlainText("\n".join(lines))
-
-    def _show_previous_training_plot(self) -> None:
-        if not self._training_plots:
-            return
-        self._training_plot_index = (self._training_plot_index - 1) % len(self._training_plots)
-        self._show_training_plot()
-
-    def _show_next_training_plot(self) -> None:
-        if not self._training_plots:
-            return
-        self._training_plot_index = (self._training_plot_index + 1) % len(self._training_plots)
-        self._show_training_plot()
-
-    def _show_training_plot(self) -> None:
-        if not self._training_plots:
-            self.training_plot_label.setText("当前训练目录没有可预览的 PNG 曲线")
-            self.training_plot_label.setPixmap(QPixmap())
-            return
-        path = self._training_plots[self._training_plot_index]
-        pixmap = QPixmap(str(path))
-        if pixmap.isNull():
-            self.training_plot_label.setText(f"无法加载图表: {path.name}")
-            return
-        self.training_plot_label.setPixmap(
-            pixmap.scaled(
-                self.training_plot_label.size(),
-                Qt.AspectRatioMode.KeepAspectRatio,
-                Qt.TransformationMode.SmoothTransformation,
-            )
-        )
-        self.training_plot_label.setToolTip(str(path))
-
     def _open_selected_eval(self) -> None:
         _open_selected_parent(self.eval_list)
 
     def _open_selected_validation(self) -> None:
         _open_selected_parent(self.validation_list)
-
-    def _open_selected_training(self) -> None:
-        item = self.training_list.currentItem()
-        if item is not None:
-            _open_path(Path(item.data(Qt.ItemDataRole.UserRole)))
 
     def _set_status(self, state: str, detail: str) -> None:
         self.status_label.setText(f"状态：{state} | {detail}")
