@@ -7,10 +7,14 @@ import logging
 import sys
 from pathlib import Path
 
+import yaml
+
 from od_platform.annotation.vlm import VLMConfig, run_vlm_annotation
 from od_platform.common.environment import warn_cli_if_not_expected_environment
 from od_platform.common.logging_utils import get_logger
 from od_platform.common.paths import LOGGING_DIR
+
+logger = logging.getLogger(__name__)
 
 EXIT_OK = 0
 EXIT_TOOL_ERROR = 2
@@ -25,7 +29,13 @@ def build_parser() -> argparse.ArgumentParser:
         description="用 VLM 按自然语言指令自动标注数据集，输出 YOLO 格式（断点续跑）",
     )
     parser.add_argument("--dataset", required=True, help="数据集名称，定位 data/raw/<dataset>/")
-    parser.add_argument("--classes", nargs="+", required=True, metavar="NAME", help="类别名称列表，index 即类别 ID")
+    classes_group = parser.add_mutually_exclusive_group(required=True)
+    classes_group.add_argument("--classes", nargs="+", metavar="NAME", help="类别名称列表，index 即类别 ID")
+    classes_group.add_argument(
+        "--classes-from-yaml",
+        action="store_true",
+        help="从 configs/datasets/<dataset>.yaml 的 names 自动读取类别",
+    )
     parser.add_argument("--prompt", default="框出所有目标", help="自然语言标注指令（默认: 框出所有目标）")
     parser.add_argument(
         "--base-url",
@@ -42,6 +52,29 @@ def build_parser() -> argparse.ArgumentParser:
     return parser
 
 
+def _resolve_classes(args) -> list[str]:
+    """解析类别列表：显式 --classes 或从 dataset yaml 的 names 读取。"""
+    if not args.classes_from_yaml:
+        return list(args.classes)
+    from od_platform.common.paths import dataset_yaml_path
+
+    yaml_path = dataset_yaml_path(args.dataset)
+    if not yaml_path.exists():
+        raise FileNotFoundError(f"数据集配置不存在: {yaml_path}")
+    payload = yaml.safe_load(yaml_path.read_text(encoding="utf-8")) or {}
+    names = payload.get("names")
+    if isinstance(names, dict):
+        classes = [str(name) for name in names.values()]
+    elif isinstance(names, list):
+        classes = [str(name) for name in names]
+    else:
+        raise ValueError(f"数据集配置 {yaml_path} 缺少 names 字段")
+    if not classes:
+        raise ValueError(f"数据集配置 {yaml_path} 的 names 为空")
+    logger.info("已从 %s 读取类别: %s", yaml_path, classes)
+    return classes
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = build_parser()
     args = parser.parse_args(argv)
@@ -56,6 +89,7 @@ def main(argv: list[str] | None = None) -> int:
     warn_cli_if_not_expected_environment(logger=logger)
 
     try:
+        classes = _resolve_classes(args)
         config = VLMConfig(
             model=args.model,
             api_key=args.api_key,
@@ -65,7 +99,7 @@ def main(argv: list[str] | None = None) -> int:
         )
         report = run_vlm_annotation(
             dataset=args.dataset,
-            classes=args.classes,
+            classes=classes,
             config=config,
             images_dir=args.images_dir,
             labels_dir=args.labels_dir,

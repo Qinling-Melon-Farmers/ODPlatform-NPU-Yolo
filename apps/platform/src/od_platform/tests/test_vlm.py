@@ -118,17 +118,20 @@ class TestAnnotateImage(unittest.TestCase):
         config = VLMConfig(model="qwen-vl-max", api_key="k", base_url="https://example.com/v1")
         with tempfile.TemporaryDirectory() as temp_dir:
             image = self._make_image(Path(temp_dir))
-            boxes = annotate_image_with_vlm(client, image, config=config, classes=["aircraft"])
-        self.assertEqual(len(boxes), 1)
-        self.assertEqual(boxes[0].class_id, 0)
+            result = annotate_image_with_vlm(client, image, config=config, classes=["aircraft"])
+        self.assertEqual(len(result.boxes), 1)
+        self.assertEqual(result.boxes[0].class_id, 0)
+        self.assertIn("boxes", result.raw_response)
+        self.assertEqual(result.discarded, 0)
+        self.assertGreaterEqual(result.latency_ms, 0)
 
     def test_annotate_empty_boxes_means_no_target(self) -> None:
         client = FakeVLMClient(['{"boxes": []}'])
         config = VLMConfig(model="m", api_key="k", base_url="https://example.com/v1")
         with tempfile.TemporaryDirectory() as temp_dir:
             image = self._make_image(Path(temp_dir))
-            boxes = annotate_image_with_vlm(client, image, config=config, classes=["aircraft"])
-        self.assertEqual(boxes, [])
+            result = annotate_image_with_vlm(client, image, config=config, classes=["aircraft"])
+        self.assertEqual(result.boxes, [])
 
     def test_annotate_retries_invalid_json_then_raises(self) -> None:
         client = FakeVLMClient(["不是 JSON", "也不是 JSON", "还是不对"])
@@ -144,8 +147,8 @@ class TestAnnotateImage(unittest.TestCase):
         config = VLMConfig(model="m", api_key="k", base_url="https://example.com/v1", retries=2)
         with tempfile.TemporaryDirectory() as temp_dir:
             image = self._make_image(Path(temp_dir))
-            boxes = annotate_image_with_vlm(client, image, config=config, classes=["aircraft"])
-        self.assertEqual(boxes, [])
+            result = annotate_image_with_vlm(client, image, config=config, classes=["aircraft"])
+        self.assertEqual(result.boxes, [])
         self.assertEqual(client.calls, 2)
 
 
@@ -221,6 +224,54 @@ class TestRunBatch(unittest.TestCase):
             self.assertEqual(report.annotated_new, 1)
             self.assertEqual(report.failed, ["a.jpg"])
             self.assertTrue((labels_dir / "b.txt").exists())
+
+    def test_run_writes_audit_artifacts(self) -> None:
+        """审计产物：annotation_report.json + raw_responses + review_queue.csv。"""
+        import json as jsonlib
+
+        json_text = '{"boxes": [{"class_id": 0, "x_center": 0.5, "y_center": 0.5, "width": 0.2, "height": 0.2}]}'
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            images_dir, labels_dir = self._make_dataset(root, ["a.jpg", "b.jpg"])
+            config = VLMConfig(model="m", api_key="k", base_url="https://example.com/v1")
+
+            with patch("od_platform.annotation.vlm.paths.RUNS_DIR", Path(temp_dir) / "runs"):
+                with patch(
+                    "od_platform.annotation.vlm.OpenAIClient",
+                    lambda **kwargs: FakeVLMClient([json_text, '{"boxes": []}']),
+                ):
+                    report = run_vlm_annotation(
+                        dataset="demo",
+                        classes=["aircraft"],
+                        config=config,
+                        images_dir=images_dir,
+                        labels_dir=labels_dir,
+                    )
+
+            audit_dirs = list((Path(temp_dir) / "runs" / "annotation").iterdir())
+            self.assertEqual(len(audit_dirs), 1)
+            audit_dir = audit_dirs[0]
+
+            report_path = audit_dir / "annotation_report.json"
+            self.assertTrue(report_path.exists())
+            payload = jsonlib.loads(report_path.read_text(encoding="utf-8"))
+            self.assertEqual(payload["annotated_count"], 2)
+            self.assertEqual(payload["total_boxes"], 1)
+            self.assertEqual(payload["model"], "m")
+            self.assertEqual(payload["class_names"], ["aircraft"])
+
+            # 原始响应保存
+            self.assertTrue((audit_dir / "raw_responses" / "a.txt").exists())
+            self.assertTrue((audit_dir / "raw_responses" / "b.txt").exists())
+
+            # 复核队列：b 为空标注 → empty 原因
+            review_path = audit_dir / "review_queue.csv"
+            self.assertTrue(review_path.exists())
+            review_lines = review_path.read_text(encoding="utf-8").splitlines()
+            self.assertGreaterEqual(len(review_lines), 2)  # 表头 + 至少一行
+            self.assertIn("empty", review_lines[1])
+
+            self.assertEqual(report.annotated_new, 2)
 
     def test_run_dry_run_no_api_call(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:

@@ -1,9 +1,14 @@
 import tempfile
 import unittest
 from pathlib import Path
+from types import SimpleNamespace
 from unittest.mock import patch
 
 from od_platform.annotation.cli.auto_annotate import main as auto_annotate_main
+
+
+class _Args(SimpleNamespace):
+    """最小参数容器（供 _resolve_classes 测试）。"""
 
 
 class TestAutoAnnotateCli(unittest.TestCase):
@@ -109,6 +114,33 @@ class TestAutoAnnotateCli(unittest.TestCase):
             kwargs = fake_run.call_args.kwargs
             self.assertTrue(kwargs["dry_run"])
             self.assertEqual(kwargs["classes"], ["aircraft"])
+
+    def test_classes_from_yaml(self) -> None:
+        """--classes-from-yaml 从 dataset yaml 的 names 读取类别。"""
+        from od_platform.annotation.cli.auto_annotate import _resolve_classes
+        from od_platform.common import paths as common_paths
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            configs_dir = Path(temp_dir) / "configs" / "datasets"
+            configs_dir.mkdir(parents=True)
+            yaml_path = configs_dir / "liftrace.yaml"
+            yaml_path.write_text(
+                "names:\n  0: bridge\n  1: panzer\n  2: pillbox\n  3: tent\n  4: tank\n",
+                encoding="utf-8",
+            )
+            with patch.object(common_paths, "DATASET_CONFIGS_DIR", configs_dir):
+                classes = _resolve_classes(_Args(classes=[], classes_from_yaml=True, dataset="liftrace"))
+            self.assertEqual(classes, ["bridge", "panzer", "pillbox", "tent", "tank"])
+
+    def test_classes_from_yaml_missing_config(self) -> None:
+        from od_platform.annotation.cli.auto_annotate import _resolve_classes
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            from od_platform.common import paths as common_paths
+
+            with patch.object(common_paths, "DATASET_CONFIGS_DIR", Path(temp_dir) / "none"):
+                with self.assertRaises(FileNotFoundError):
+                    _resolve_classes(_Args(classes=[], classes_from_yaml=True, dataset="liftrace"))
 
     def test_main_runs_with_prompt(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
