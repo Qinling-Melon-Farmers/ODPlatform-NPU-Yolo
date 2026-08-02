@@ -156,7 +156,8 @@ def list_sessions(limit: int = 20) -> list[AgentSession]:
         session = AgentSession.load(session_dir.name)
         if session is not None:
             candidates.append(session)
-    candidates.sort(key=lambda s: s.session_id, reverse=True)
+    # 按目录修改时间（最后活动）倒序，避免同秒带后缀 ID 的字符串排序误差
+    candidates.sort(key=lambda s: s.root_dir.stat().st_mtime, reverse=True)
     return candidates[:limit]
 
 
