@@ -272,6 +272,9 @@ class TestRunBatch(unittest.TestCase):
             self.assertIn("empty", review_lines[1])
 
             self.assertEqual(report.annotated_new, 2)
+            self.assertIsNotNone(report.audit_dir)
+            if report.audit_dir is not None:
+                self.assertTrue(report.audit_dir.exists())
 
     def test_run_dry_run_no_api_call(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:

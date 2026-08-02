@@ -69,6 +69,7 @@ class VLMAnnotationReport:
         annotated_new: 本次新增标注数。
         failed:        失败图片文件名列表。
         box_count:     本次标注框总数。
+        audit_dir:     本次审计产物目录（runs/annotation/<run_id>/）。
     """
 
     dataset: str
@@ -76,6 +77,7 @@ class VLMAnnotationReport:
     annotated_new: int
     failed: list[str] = field(default_factory=list)
     box_count: int = 0
+    audit_dir: Path | None = None
 
 
 def build_annotation_prompt(*, classes: list[str], user_prompt: str) -> str:
@@ -417,6 +419,7 @@ def run_vlm_annotation(
         annotated_new=annotated_new,
         failed=failed,
         box_count=box_count,
+        audit_dir=audit_dir,
     )
 
 
