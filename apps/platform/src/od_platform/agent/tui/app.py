@@ -138,7 +138,7 @@ class ODPAgentApp(App[None]):
         if message.startswith("/"):
             self._handle_slash(message)
             return
-        self.run_worker(self._run_agent(message), thread=True, exclusive=True)
+        self.run_worker(self._agent_task(message), thread=True, exclusive=True)
 
     def action_clear_conversation(self) -> None:
         self.query_one("#conversation", RichLog).clear()
@@ -148,20 +148,30 @@ class ODPAgentApp(App[None]):
 
     # ---- Agent 执行 ----
 
-    def _run_agent(self, message: str) -> None:
-        """后台线程执行一轮 Agent 对话（事件经 call_from_thread 渲染）。"""
+    def _agent_task(self, message: str):
+        """构造后台线程执行函数（非生成器）。
+
+        ``run_worker(thread=True)`` 不接受同步生成器（会退化为在 app
+        事件循环内迭代，导致 ``call_from_thread`` 同线程报错），因此
+        返回普通函数供 Worker 在线程中执行，事件经 ``call_from_thread``
+        安全回传 UI 线程渲染。
+        """
         conversation = self.query_one("#conversation", RichLog)
         tool_runs = self.query_one("#tool-runs", RichLog)
-        self.call_from_thread(conversation.write, render_user_message(message))
-        for event in self.orchestrator.run_stream(message):
-            line = render_event(event)
-            if not line:
-                continue
-            self.call_from_thread(conversation.write, line)
-            if event.kind in ("tool_start", "tool_result"):
-                self.call_from_thread(tool_runs.write, line)
-            if event.kind == "done":
-                self.call_from_thread(self._refresh_artifacts)
+
+        def _task() -> None:
+            self.call_from_thread(conversation.write, render_user_message(message))
+            for event in self.orchestrator.run_stream(message):
+                line = render_event(event)
+                if not line:
+                    continue
+                self.call_from_thread(conversation.write, line)
+                if event.kind in ("tool_start", "tool_result"):
+                    self.call_from_thread(tool_runs.write, line)
+                if event.kind == "done":
+                    self.call_from_thread(self._refresh_artifacts)
+
+        return _task
 
     # ---- 斜杠命令 ----
 
