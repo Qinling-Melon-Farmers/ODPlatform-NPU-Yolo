@@ -17,12 +17,14 @@ class AgentWorker(QObject):
         completed:   最终回答文本（对话自然结束）。
         cancelled:   用户主动取消（与 failed 区分）。
         failed:      致命错误信息（API 配置错误等）。
+        session_ready: 会话对象（多轮记忆，供视图刷新会话列表）。
     """
 
     event_ready = Signal(object)
     completed = Signal(str)
     cancelled = Signal()
     failed = Signal(str)
+    session_ready = Signal(object)
 
     def __init__(
         self,
@@ -33,6 +35,7 @@ class AgentWorker(QObject):
         message: str,
         max_iterations: int = 8,
         dry_run: bool = False,
+        session=None,
     ) -> None:
         super().__init__()
         self._model = model
@@ -41,6 +44,7 @@ class AgentWorker(QObject):
         self._message = message
         self._max_iterations = max_iterations
         self._dry_run = dry_run
+        self._session = session
         self._cancelled = False
 
     @Slot()
@@ -55,7 +59,12 @@ class AgentWorker(QObject):
                 max_iterations=self._max_iterations,
             )
             registry = build_default_registry(dry_run=self._dry_run)
-            orchestrator = AgentOrchestrator(client=client, registry=registry, config=config)
+            orchestrator = AgentOrchestrator(
+                client=client,
+                registry=registry,
+                config=config,
+                session=self._session,
+            )
 
             final_text = ""
             for event in orchestrator.run_stream(self._message):
@@ -65,6 +74,8 @@ class AgentWorker(QObject):
                 self.event_ready.emit(event)
                 if event.kind == "done":
                     final_text = event.content or ""
+            if orchestrator.session is not None:
+                self.session_ready.emit(orchestrator.session)
         except Exception as exc:  # noqa: BLE001 - GUI boundary must not crash the process.
             self.failed.emit(f"{type(exc).__name__}: {exc}")
             return
