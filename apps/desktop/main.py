@@ -2,20 +2,17 @@
 
 from __future__ import annotations
 
-import csv
 import json
-import shlex
 import sys
 from pathlib import Path
-from typing import Any
 
 ROOT_DIR = Path(__file__).resolve().parents[2]
 PLATFORM_SRC = ROOT_DIR / "apps" / "platform" / "src"
 
 try:
     import cv2
-    from PySide6.QtCore import Qt, QThread, QUrl, Slot
-    from PySide6.QtGui import QDesktopServices, QImage, QPixmap
+    from PySide6.QtCore import Qt, QThread, Slot
+    from PySide6.QtGui import QImage, QPixmap
     from PySide6.QtWidgets import (
         QApplication,
         QCheckBox,
@@ -51,7 +48,23 @@ except ImportError as exc:  # pragma: no cover - optional desktop dependencies.
 
 import task_builder  # noqa: E402
 from infer_worker import InferWorker  # noqa: E402
+
+# 兼容别名（Step 7 清理；新代码请从 services.* 导入）
+from services import file_utils  # noqa: E402
+from services import paths as desktop_paths  # noqa: E402
 from task_worker import CommandWorker  # noqa: E402
+
+_read_json = file_utils.read_json
+_read_csv_rows = file_utils.read_csv_rows
+_format_mapping = file_utils.format_mapping
+_filter_paths = file_utils.filter_paths
+_split_extra_args = file_utils.split_extra_args
+_open_path = file_utils.open_path
+_open_selected_parent = file_utils.open_selected_parent
+_is_relative_to = desktop_paths.is_relative_to
+_default_model = desktop_paths.default_model
+_default_source = desktop_paths.default_source
+_default_results_csv = desktop_paths.default_results_csv
 
 
 class MainWindow(QMainWindow):
@@ -1601,73 +1614,12 @@ class MainWindow(QMainWindow):
         self.infer_log.append(message)
 
 
-def _open_path(path: Path) -> None:
-    target = path if path.is_dir() else path.parent
-    QDesktopServices.openUrl(QUrl.fromLocalFile(str(target)))
 
 
-def _open_selected_parent(list_widget: QListWidget) -> None:
-    item = list_widget.currentItem()
-    if item is not None:
-        _open_path(Path(item.data(Qt.ItemDataRole.UserRole)))
 
 
-def _read_json(path: Path) -> dict:
-    try:
-        return json.loads(path.read_text(encoding="utf-8"))
-    except Exception as exc:  # noqa: BLE001 - result viewer should keep the UI alive.
-        return {"error": f"{type(exc).__name__}: {exc}", "path": str(path)}
 
 
-def _read_csv_rows(path: Path) -> list[dict[str, str]]:
-    try:
-        with path.open("r", encoding="utf-8", newline="") as handle:
-            return list(csv.DictReader(handle))
-    except UnicodeDecodeError:
-        with path.open("r", encoding="gbk", newline="") as handle:
-            return list(csv.DictReader(handle))
-
-
-def _format_mapping(data: Any, preferred: tuple[str, ...] = ()) -> list[str]:
-    if not isinstance(data, dict):
-        return [str(data)]
-    lines: list[str] = []
-    seen: set[str] = set()
-    for key in preferred:
-        if key in data:
-            lines.append(f"{key:<28}: {data[key]}")
-            seen.add(key)
-    for key, value in data.items():
-        if key in seen:
-            continue
-        if isinstance(value, (dict, list)):
-            value = json.dumps(value, ensure_ascii=False)
-        lines.append(f"{key:<28}: {value}")
-    return lines
-
-
-def _filter_paths(paths: list[Path], query: str) -> list[Path]:
-    query = query.strip().lower()
-    if not query:
-        return paths
-    return [path for path in paths if query in str(path).lower()]
-
-
-def _split_extra_args(text: str) -> list[str]:
-    if not text:
-        return []
-    try:
-        return shlex.split(text, posix=False)
-    except ValueError as exc:
-        raise ValueError(f"追加参数解析失败: {exc}") from exc
-
-
-def _is_relative_to(path: Path, base: Path) -> bool:
-    try:
-        path.relative_to(base)
-        return True
-    except ValueError:
-        return False
 
 
 def _with_buttons(line_edit: QLineEdit, buttons: list[tuple[str, object]]) -> QWidget:
@@ -1702,27 +1654,7 @@ def _to_pixmap(image) -> QPixmap:
     return QPixmap.fromImage(q_image)
 
 
-def _default_model() -> Path:
-    candidates = sorted((ROOT_DIR / "models" / "trained").glob("**/*best*.pt"))
-    if candidates:
-        return candidates[-1]
-    return ROOT_DIR / "models" / "checkpoints" / "best.pt"
 
-
-def _default_source() -> str:
-    test_images = ROOT_DIR / "data" / "processed" / "steel-surface-defect" / "test" / "images"
-    if test_images.exists():
-        first = next(iter(sorted(test_images.glob("*"))), None)
-        if first is not None:
-            return str(first)
-    return "0"
-
-
-def _default_results_csv() -> Path:
-    candidates = sorted((ROOT_DIR / "runs").glob("**/results.csv"))
-    if candidates:
-        return candidates[-1]
-    return ROOT_DIR / "runs" / "detect" / "train" / "results.csv"
 
 
 def _load_stylesheet() -> str:
