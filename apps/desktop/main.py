@@ -350,6 +350,7 @@ class MainWindow(QMainWindow):
         tabs.addTab(agent_view, "AI 助手")
         tabs.addTab(self._build_model_catalog_tab(), "模型目录")
         tabs.addTab(self._build_training_tab(), "训练结果")
+        tabs.addTab(self._build_annotation_review_tab(), "标注复核")
         tabs.addTab(self._build_tasks_tab(), "任务启动")
         root.addWidget(tabs)
         self.setCentralWidget(central)
@@ -493,6 +494,11 @@ class MainWindow(QMainWindow):
         from views.agent_chat_view import AgentChatView
 
         return AgentChatView()
+
+    def _build_annotation_review_tab(self) -> QWidget:
+        from views.annotation_review import AnnotationReviewView
+
+        return AnnotationReviewView()
 
     def _build_model_catalog_tab(self) -> QWidget:
         refresh_button = QPushButton("刷新")
