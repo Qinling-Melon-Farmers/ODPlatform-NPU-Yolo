@@ -70,6 +70,26 @@ YOLO zip 导入会复制 `data.yaml`，并把 `images/*` 与 `labels/*` 展平�
 | `odp-val` | YOLO 模型评估，不归档权重 |
 | `odp-infer` | 图片、目录、视频、摄像头推理，支持 D8 多级流水线 |
 | `odp-plot-training` | 绘制训练曲线并导出指标摘要 |
+| `odp-list-models` | 列出内置 YOLO 全系列模型（v5/v7/v8/v9/v10/11/12），支持自然语言推荐 |
+| `odp-annotate` | 交互式边界框标注（OpenCV），`--edit` 编辑已有标注 |
+| `odp-auto-annotate` | VLM 自动标注（Qwen-VL / GLM-4.5V 等 OpenAI 兼容端点），输出审计报告与复核队列 |
+| `odp-agent` | AI 助手：自然语言驱动平台任务，支持 REPL / TUI / 会话恢复 / 任务模板 |
+
+## AI 助手（Agent）
+
+```powershell
+# 交互模式（REPL，多轮记忆 + 斜杠命令）
+odp-agent --base-url https://api.deepseek.com/v1 --model deepseek-chat
+
+# TUI 界面（需 pip install textual）
+odp-agent --tui --base-url https://api.deepseek.com/v1 --model deepseek-chat
+
+# 按任务模板执行（准备数据集 / 训练并评估 / 自动标注复核）
+odp-agent --template train_and_evaluate --task "用 yolo11n 训练 liftrace 50 轮" \
+  --base-url https://api.deepseek.com/v1 --model deepseek-chat
+```
+
+Agent 以自然语言控制层调用既有 CLI/服务（不复制底层逻辑），支持：多轮会话（`runs/agent_sessions/`）、历史恢复（`--session`）、工具风险分级（写文件/消耗 API/GPU 长任务需 `/confirm`）、子进程隔离执行、任务模板、VLM 自动标注闭环（`runs/annotation/<run_id>/` 审计报告 + 复核队列 + 桌面复核页）。
 
 ## 模块边界
 
@@ -82,7 +102,10 @@ YOLO zip 导入会复制 `data.yaml`，并把 `images/*` 与 `labels/*` 展平�
 - `frame_source/`：图片、图片目录、视频、摄像头统一帧源。
 - `visualization/`：中文标签、美化框、Pillow 文本渲染。
 - `inference/`：D8 推理服务、hook、sink、pause/cancel、多级流水线。
-- `apps/desktop/`：PySide6 工作台，只调用 platform 服务层和 CLI，不复制业务逻辑。
+- `model_catalog/`：YOLO 全系列模型元数据、自然语言推荐、用户扩展（configs/models.yaml）。
+- `annotation/`：手动标注画布、YOLO 读写、VLM 自动标注（提示词/JSON 容错/审计/复核队列）。
+- `agent/`：OpenAI 兼容客户端、工具注册（单一清单 manifest）、风险分级、会话持久化、ReAct 编排、TUI。
+- `apps/desktop/`：PySide6 工作台（推理/评估/质检/训练/模型目录/AI 助手/标注复核/任务启动），只调用 platform 服务层和 CLI，不复制业务逻辑。
 
 ## 桌面端
 
@@ -91,7 +114,7 @@ conda activate odplat
 python apps/desktop/main.py
 ```
 
-桌面端当前支持图片、图片文件夹、视频、摄像头推理，浏览模型评估、数据质检和训练结果，并可从“任务启动”页调用数据导入、转换、质检、评估、训练 CLI。训练默认 dry-run，避免误触发长任务。
+桌面端（ODPlatform Studio）当前支持：图片/视频/摄像头推理、模型评估/数据质检/训练结果浏览、模型目录（34 模型推荐与一键应用）、AI 助手对话页（多轮会话/历史恢复）、标注复核页（VLM 审计队列精修）、任务启动页（11 个入口，含 VLM 自动标注与 AI 任务）。训练默认 dry-run，避免误触发长任务。
 
 ## QA 与非 Web 收尾
 
