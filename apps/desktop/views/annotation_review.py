@@ -23,7 +23,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from od_platform.annotation.canvas import _imread_unicode
+from od_platform.annotation.image_utils import imread_unicode
 from od_platform.annotation.writer import read_yolo_label, write_yolo_label
 from od_platform.common import paths
 from views.annotation_review_view import (
@@ -158,8 +158,8 @@ class AnnotationReviewView(QWidget):
             return
 
         boxes = read_yolo_label(label_path)
-        # 复用 _imread_unicode：兼容 Windows 非 ASCII（中文）路径
-        image = _imread_unicode(image_path)
+        # 兼容 Windows 非 ASCII（中文）路径
+        image = imread_unicode(image_path)
         if image is None:
             self.preview_label.setText(f"无法读取图片: {image_path}")
             return

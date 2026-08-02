@@ -3,10 +3,10 @@ import unittest
 from pathlib import Path
 
 from od_platform.annotation.canvas import (
-    _imread_unicode,
     boxes_to_display_coords,
     compute_display_scale,
 )
+from od_platform.annotation.image_utils import imread_unicode as _imread_unicode
 from od_platform.annotation.session import AnnotationSession
 from od_platform.annotation.writer import BBox, bbox_from_pixels, read_yolo_label, write_yolo_label
 
