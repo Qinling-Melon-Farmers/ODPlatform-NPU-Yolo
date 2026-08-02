@@ -159,7 +159,7 @@ class AnnotationCanvas:
         Returns:
             CanvasResult：save 带标注、skip 空标注、quit 终止会话。
         """
-        image = _imread_unicode(image_path)
+        image = imread_unicode(image_path)
         if image is None:
             logger.warning("无法读取图片，跳过: %s", image_path)
             return CanvasResult(action="skip")
@@ -278,10 +278,6 @@ class AnnotationCanvas:
                 )
             )
         return boxes
-
-
-#: 兼容别名（历史引用保留；新代码请从 annotation.image_utils 导入 imread_unicode）。
-_imread_unicode = imread_unicode
 
 
 @lru_cache(maxsize=8)
