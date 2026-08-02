@@ -597,12 +597,20 @@ def _redact_arguments(arguments: dict) -> dict:
 
 
 def build_default_registry(*, dry_run: bool = False, executor: str = "agent") -> ToolRegistry:
-    """构建默认工具注册表（服务工具 + 平台 CLI 工具）。"""
+    """构建默认工具注册表（服务工具 + 平台 CLI 工具，后者来自单一清单）。"""
+    from od_platform.agent.manifest import TOOL_MANIFEST
+
     registry = ToolRegistry(dry_run=dry_run, executor=executor)
 
     _register_service_tools(registry)
-    for module, flags in _DEFAULT_CLI_TOOLS:
-        registry.register_cli(module, **flags)
+    for entry in TOOL_MANIFEST:
+        registry.register_cli(
+            entry.module,
+            entry=entry.entry,
+            risk_level=entry.risk_level,
+            excluded_args=entry.excluded_args,
+            dry_run_flag=entry.dry_run_flag,
+        )
     return registry
 
 
@@ -740,19 +748,3 @@ def _register_service_tools(registry: ToolRegistry) -> None:
             "",
         )
 
-
-#: (模块路径, 注册标志)。auto-annotate 的凭据只走环境变量。
-_DEFAULT_CLI_TOOLS: list[tuple[str, dict]] = [
-    ("od_platform.cli.import_dataset", {"risk_level": RISK_WRITE_FILES}),
-    ("od_platform.cli.transform_data", {"risk_level": RISK_WRITE_FILES}),
-    ("od_platform.cli.validate_data", {"risk_level": RISK_WRITE_FILES}),
-    ("od_platform.runtime_config.generator", {"risk_level": RISK_WRITE_FILES}),
-    ("od_platform.cli.train_model", {"risk_level": RISK_GPU_LONG_RUN, "dry_run_flag": True}),
-    ("od_platform.cli.evaluate_model", {"risk_level": RISK_GPU_LONG_RUN}),
-    ("od_platform.cli.infer_model", {"risk_level": RISK_GPU_LONG_RUN, "dry_run_flag": True}),
-    ("od_platform.cli.plot_training", {"risk_level": RISK_WRITE_FILES}),
-    (
-        "od_platform.annotation.cli.auto_annotate",
-        {"risk_level": RISK_COST_API, "excluded_args": ("--api-key", "--base-url")},
-    ),
-]

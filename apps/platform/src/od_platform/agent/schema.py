@@ -128,18 +128,25 @@ def parser_to_tool_schema(parser: argparse.ArgumentParser) -> ToolSchema | None:
     )
 
 
+def default_cli_modules() -> list[str]:
+    """返回平台 CLI 工具清单（由 agent.manifest 单一清单派生）。"""
+    from od_platform.agent.manifest import manifest_modules
+
+    return manifest_modules()
+
+
 def build_all_tool_schemas(modules: list[str] | None = None) -> list[ToolSchema]:
     """构建一批 CLI 模块的 tool schema。
 
     Args:
         modules: 模块路径列表（如 ``od_platform.cli.train_model``）；
-                缺省使用默认 CLI 清单。
+                缺省使用 manifest 单一清单。
 
     Returns:
         ToolSchema 列表（跳过无法导入或返回 None 的模块）。
     """
     schemas: list[ToolSchema] = []
-    for module_name in modules or DEFAULT_CLI_MODULES:
+    for module_name in modules if modules is not None else default_cli_modules():
         try:
             module = importlib.import_module(module_name)
         except ImportError:
@@ -238,19 +245,3 @@ def _type_name(type_func: Any) -> str:
     return type(type_func).__name__
 
 
-#: 默认 CLI 模块清单——仅供 ``build_all_tool_schemas`` 批量自省使用。
-#: 注意：``build_default_registry``（tools.py）维护自己的注册表
-#: （服务层工具 + CLI 工具），两处清单各自独立，新增 CLI 需同步。
-DEFAULT_CLI_MODULES: list[str] = [
-    "od_platform.cli.init_project",
-    "od_platform.cli.import_dataset",
-    "od_platform.cli.transform_data",
-    "od_platform.cli.validate_data",
-    "od_platform.runtime_config.generator",
-    "od_platform.cli.train_model",
-    "od_platform.cli.evaluate_model",
-    "od_platform.cli.infer_model",
-    "od_platform.cli.plot_training",
-    "od_platform.model_catalog.cli.list_models",
-    "od_platform.annotation.cli.auto_annotate",
-]

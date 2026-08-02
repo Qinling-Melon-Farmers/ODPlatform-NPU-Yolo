@@ -10,6 +10,7 @@ import sys
 from od_platform.agent.client import OpenAIClient
 from od_platform.agent.orchestrator import AgentConfig, AgentOrchestrator
 from od_platform.agent.session import AgentSession
+from od_platform.agent.templates import list_templates, template_instruction
 from od_platform.agent.tools import ToolRegistry, build_default_registry
 from od_platform.common.environment import warn_cli_if_not_expected_environment
 from od_platform.common.logging_utils import get_logger
@@ -46,6 +47,11 @@ def build_parser() -> argparse.ArgumentParser:
         "--tui",
         action="store_true",
         help="使用 TUI 界面（需安装 textual：pip install textual）；未安装时回退交互模式",
+    )
+    parser.add_argument(
+        "--template",
+        metavar="NAME",
+        help="按任务模板执行（prepare_dataset / train_and_evaluate / annotate_and_review）",
     )
     parser.add_argument("--verbose", "-v", action="store_true", help="输出 DEBUG 日志")
     return parser
@@ -101,6 +107,18 @@ def main(argv: list[str] | None = None) -> int:
             config=config,
             session=session,
         )
+
+        if args.template:
+            instruction = template_instruction(args.template)
+            if not instruction:
+                logger.error(
+                    "模板 %s 不存在（可用: %s）",
+                    args.template,
+                    ", ".join(list_templates()),
+                )
+                return EXIT_TOOL_ERROR
+            logger.info("使用任务模板: %s", args.template)
+            orchestrator.system_prompt = f"{orchestrator.system_prompt}\n\n{instruction}"
 
         if args.task:
             return _run_once(orchestrator, args.task, logger)
@@ -189,8 +207,13 @@ def _handle_slash_command(
 
     if cmd == "/help":
         logger.info(
-            "命令: /help /sessions /resume /open <id> /new /clear /confirm <工具> /exit"
+            "命令: /help /sessions /resume /open <id> /new /clear /confirm <工具> /templates /exit"
         )
+    elif cmd == "/templates":
+        from od_platform.agent.templates import TEMPLATES
+
+        for name, template in TEMPLATES.items():
+            logger.info("  %s: %s", name, template.description)
     elif cmd == "/confirm":
         if not arg:
             logger.info("用法: /confirm <工具名>（如 /confirm odp-train）")
