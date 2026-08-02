@@ -30,7 +30,6 @@ try:
         QPushButton,
         QSpinBox,
         QSplitter,
-        QStackedWidget,
         QTabWidget,
         QTextEdit,
         QVBoxLayout,
@@ -46,7 +45,6 @@ except ImportError as exc:  # pragma: no cover - optional desktop dependencies.
     )
     raise SystemExit(2) from exc
 
-import task_builder  # noqa: E402
 from infer_worker import InferWorker  # noqa: E402
 
 # 兼容别名（Step 7 清理；新代码请从 services.* 导入）
@@ -155,10 +153,6 @@ class MainWindow(QMainWindow):
         self.prev_plot_button = QPushButton("上一张图")
         self.next_plot_button = QPushButton("下一张图")
 
-        self.desktop_task_combo = QComboBox()
-        self.desktop_task_combo.addItems(list(task_builder.TASK_NAMES))
-        self.task_stack = QStackedWidget()
-
         self.model_catalog_list = QListWidget()
         self.model_catalog_filter_edit = QLineEdit("")
         self.model_catalog_filter_edit.setPlaceholderText("按名称/描述筛选模型")
@@ -172,145 +166,39 @@ class MainWindow(QMainWindow):
         self.model_catalog_detail = QTextEdit()
         self.model_catalog_detail.setReadOnly(True)
 
-        self.import_dataset_edit = QLineEdit("steel-surface-defect")
-        self.import_zip_edit = QLineEdit("")
-        self.import_zip_edit.setPlaceholderText("VOC/YOLO zip 路径")
-        self.import_format_combo = QComboBox()
-        self.import_format_combo.addItems(["voc", "yolo"])
-        self.import_overwrite_check = QCheckBox("允许覆盖已有 raw 数据目录")
-        self.import_extra_args_edit = QLineEdit("")
-        self.import_extra_args_edit.setPlaceholderText("追加 CLI 参数")
-
-        self.transform_dataset_edit = QLineEdit("steel-surface-defect")
-        self.transform_format_combo = QComboBox()
-        self.transform_format_combo.addItems(["pascal_voc", "coco", "yolo"])
-        self.transform_task_combo = QComboBox()
-        self.transform_task_combo.addItems(["detect"])
-        self.transform_extra_args_edit = QLineEdit("")
-        self.transform_extra_args_edit.setPlaceholderText("例如 --split-strategy random --seed 1210")
-
-        self.validate_dataset_edit = QLineEdit("steel-surface-defect")
-        self.validate_task_combo = QComboBox()
-        self.validate_task_combo.addItems(["detect"])
-        self.validate_executor_edit = QLineEdit("")
-        self.validate_extra_args_edit = QLineEdit("")
-        self.validate_extra_args_edit.setPlaceholderText("例如 --verbose")
-
-        self.eval_model_edit = QLineEdit(str(_default_model()))
-        self.eval_dataset_edit = QLineEdit("steel-surface-defect")
-        self.eval_config_edit = QLineEdit("val")
-        self.eval_device_edit = QLineEdit("0")
-        self.eval_executor_edit = QLineEdit("")
-        self.eval_name_edit = QLineEdit("desktop-eval")
-        self.eval_extra_args_edit = QLineEdit("")
-        self.eval_extra_args_edit.setPlaceholderText("例如 --split val --plots")
-
-        self.train_model_edit = QLineEdit(str(_default_model()))
-        self.train_dataset_edit = QLineEdit("steel-surface-defect")
-        self.train_config_edit = QLineEdit("train")
-        self.train_device_edit = QLineEdit("0")
-        self.train_executor_edit = QLineEdit("")
-        self.train_name_edit = QLineEdit("desktop-train")
-        self.train_epochs_spin = QSpinBox()
-        self.train_epochs_spin.setRange(1, 10000)
-        self.train_epochs_spin.setValue(100)
-        self.train_batch_spin = QSpinBox()
-        self.train_batch_spin.setRange(1, 4096)
-        self.train_batch_spin.setValue(16)
-        self.train_workers_spin = QSpinBox()
-        self.train_workers_spin.setRange(0, 128)
-        self.train_workers_spin.setValue(4)
-        self.train_dry_run_check = QCheckBox("dry-run：只生成计划和日志，不启动训练")
-        self.train_dry_run_check.setChecked(True)
-        self.train_extra_args_edit = QLineEdit("")
-        self.train_extra_args_edit.setPlaceholderText("例如 --imgsz 640 --no-archive")
-
-        self.reset_dry_run_check = QCheckBox("dry-run：只预览，不删除")
-        self.reset_dry_run_check.setChecked(True)
-        self.reset_yes_check = QCheckBox("确认执行 --yes")
-        self.reset_force_check = QCheckBox("跳过交互确认 --force")
-        self.reset_backup_check = QCheckBox("删除前备份 --backup")
-        self.reset_extra_args_edit = QLineEdit("")
-        self.reset_extra_args_edit.setPlaceholderText("追加 CLI 参数")
-
-        self.plot_csv_edit = QLineEdit(str(_default_results_csv()))
-        self.plot_output_edit = QLineEdit("")
-        self.plot_output_edit.setPlaceholderText("输出 PNG 路径；留空则使用默认输出")
-        self.plot_summary_edit = QLineEdit("")
-        self.plot_summary_edit.setPlaceholderText("可选 summary JSON 路径")
-        self.plot_matplotx_check = QCheckBox("启用 matplotx 风格")
-        self.plot_extra_args_edit = QLineEdit("")
-        self.plot_extra_args_edit.setPlaceholderText("追加 CLI 参数")
-
-        self.list_models_family_combo = QComboBox()
-        self.list_models_recommend_edit = QLineEdit("")
-        self.list_models_recommend_edit.setPlaceholderText("自然语言推荐，如：最快 / 最准")
-        self.list_models_limit_spin = QSpinBox()
-        self.list_models_limit_spin.setRange(1, 100)
-        self.list_models_limit_spin.setValue(10)
-        self.list_models_json_check = QCheckBox("JSON 格式输出")
-        self.list_models_extra_args_edit = QLineEdit("")
-        self.list_models_extra_args_edit.setPlaceholderText("追加 CLI 参数")
-
-        self.annotate_dataset_edit = QLineEdit("")
-        self.annotate_dataset_edit.setPlaceholderText("数据集名称，位于 data/raw/<name>/")
-        self.annotate_classes_edit = QLineEdit("")
-        self.annotate_classes_edit.setPlaceholderText("空格分隔的类别名，如：cat dog ship")
-        self.annotate_resume_check = QCheckBox("恢复中断的标注会话（跳过已标注图片）")
-        self.annotate_extra_args_edit = QLineEdit("")
-        self.annotate_extra_args_edit.setPlaceholderText("追加 CLI 参数")
-
-        self.auto_annotate_dataset_edit = QLineEdit("")
-        self.auto_annotate_dataset_edit.setPlaceholderText("数据集名称，位于 data/raw/<name>/")
-        self.auto_annotate_classes_edit = QLineEdit("")
-        self.auto_annotate_classes_edit.setPlaceholderText("空格分隔的类别名，如：cat dog ship")
-        self.auto_annotate_prompt_edit = QLineEdit("框出所有目标")
-        self.auto_annotate_prompt_edit.setPlaceholderText("自然语言标注指令，如：框出所有飞机")
-        self.auto_annotate_base_url_edit = QLineEdit("")
-        self.auto_annotate_base_url_edit.setPlaceholderText("OpenAI 兼容 API 地址（必填），如 DashScope/Qwen 兼容端点")
-        self.auto_annotate_model_edit = QLineEdit("")
-        self.auto_annotate_model_edit.setPlaceholderText("视觉模型名（必填），如 qwen-vl-max / glm-4.5v-turbo")
-        self.auto_annotate_api_key_edit = QLineEdit("")
-        self.auto_annotate_api_key_edit.setEchoMode(QLineEdit.EchoMode.Password)
-        self.auto_annotate_api_key_edit.setPlaceholderText("API 密钥；留空读环境变量 OPENAI_API_KEY")
-        self.auto_annotate_limit_spin = QSpinBox()
-        self.auto_annotate_limit_spin.setRange(0, 1_000_000)
-        self.auto_annotate_limit_spin.setSpecialValueText("不限")
-        self.auto_annotate_dry_run_check = QCheckBox("dry-run：只统计待标注数量，不调用 API")
-        self.auto_annotate_dry_run_check.setChecked(True)
-        self.auto_annotate_extra_args_edit = QLineEdit("")
-        self.auto_annotate_extra_args_edit.setPlaceholderText("追加 CLI 参数")
-
-        self.ai_task_prompt_edit = QLineEdit("")
-        self.ai_task_prompt_edit.setPlaceholderText("自然语言任务，如：用最快的模型训练 rsod 数据集")
-        self.ai_task_base_url_edit = QLineEdit("")
-        self.ai_task_base_url_edit.setPlaceholderText("OpenAI 兼容 API 地址（必填），如 https://api.deepseek.com/v1")
-        self.ai_task_model_edit = QLineEdit("")
-        self.ai_task_model_edit.setPlaceholderText("模型名（必填），如 deepseek-chat")
-        self.ai_task_api_key_edit = QLineEdit("")
-        self.ai_task_api_key_edit.setEchoMode(QLineEdit.EchoMode.Password)
-        self.ai_task_api_key_edit.setPlaceholderText("API 密钥；留空读环境变量 OPENAI_API_KEY")
-        self.ai_task_extra_args_edit = QLineEdit("")
-        self.ai_task_extra_args_edit.setPlaceholderText("追加 CLI 参数")
-
-
-        self.task_command_preview = QTextEdit()
-        self.task_command_preview.setReadOnly(True)
-        self.task_command_preview.setMaximumHeight(100)
-        self.task_output = QTextEdit()
-        self.task_output.setReadOnly(True)
-        self.task_start_button = QPushButton("启动任务")
-        self.task_start_button.setProperty("primary", True)
-        self.task_stop_button = QPushButton("停止任务")
-        self.task_stop_button.setEnabled(False)
-
         self._build_layout()
         self._connect_signals()
         self._refresh_all_result_tabs()
 
+    def _sync_agent_config_fields(self) -> None:
+        """AI 助手页（AgentChatView）与 AI 任务页（TaskLauncherView）配置双向同步。"""
+        self._syncing_agent_config = False
+        view = self.agent_view
+
+        # view → 任务页
+        view.config_changed.connect(self._apply_view_config_to_task_page)
+        # 任务页 → view（经 TaskLauncherView.agent_config_changed）
+        self.task_launcher_view.agent_config_changed.connect(self._apply_task_config_to_view)
+
+    @Slot(str, str, str)
+    def _apply_view_config_to_task_page(self, base_url: str, model: str, api_key: str) -> None:
+        if self._syncing_agent_config:
+            return
+        self._syncing_agent_config = True
+        self.task_launcher_view.set_agent_config(base_url, model, api_key)
+        self._syncing_agent_config = False
+
+    @Slot(str, str, str)
+    def _apply_task_config_to_view(self, base_url: str, model: str, api_key: str) -> None:
+        if self._syncing_agent_config:
+            return
+        self._syncing_agent_config = True
+        self.agent_view.set_config(base_url, model, api_key)
+        self._syncing_agent_config = False
+
     def closeEvent(self, event) -> None:  # noqa: N802 - Qt API name.
         self._stop_worker()
-        self._stop_task()
+        self.task_launcher_view.shutdown()
         super().closeEvent(event)
 
     def _build_layout(self) -> None:
@@ -351,7 +239,9 @@ class MainWindow(QMainWindow):
         tabs.addTab(self._build_model_catalog_tab(), "模型目录")
         tabs.addTab(self._build_training_tab(), "训练结果")
         tabs.addTab(self._build_annotation_review_tab(), "标注复核")
-        tabs.addTab(self._build_tasks_tab(), "任务启动")
+        task_launcher_view = self._build_task_launcher_tab()
+        self.task_launcher_view = task_launcher_view
+        tabs.addTab(task_launcher_view, "任务启动")
         root.addWidget(tabs)
         self.setCentralWidget(central)
 
@@ -500,6 +390,11 @@ class MainWindow(QMainWindow):
 
         return AnnotationReviewView()
 
+    def _build_task_launcher_tab(self) -> QWidget:
+        from views.task_launcher_view import TaskLauncherView
+
+        return TaskLauncherView()
+
     def _build_model_catalog_tab(self) -> QWidget:
         refresh_button = QPushButton("刷新")
         recommend_row = QWidget()
@@ -583,17 +478,19 @@ class MainWindow(QMainWindow):
         self._set_status("就绪", f"模型目录 {len(models)} 个")
 
     def _sync_model_family_combos(self) -> None:
-        """从 model_catalog 动态同步系列下拉项，避免与目录硬编码重复。"""
+        """从 model_catalog 动态同步系列下拉项（S4 拆分后仅同步自身视图）。"""
         from od_platform.model_catalog import list_families
 
         families = list_families()
-        for combo in (self.model_catalog_family_combo, self.list_models_family_combo):
-            current = combo.currentText()
-            combo.blockSignals(True)
-            combo.clear()
-            combo.addItems(["全部", *families])
-            combo.setCurrentText(current if current in ("全部", *families) else "全部")
-            combo.blockSignals(False)
+        combo = self.model_catalog_family_combo
+        current = combo.currentText()
+        combo.blockSignals(True)
+        combo.clear()
+        combo.addItems(["全部", *families])
+        combo.setCurrentText(current if current in ("全部", *families) else "全部")
+        combo.blockSignals(False)
+        # 任务页「列出模型」系列下拉同步（S4 后改走 families_changed 信号）
+        self.task_launcher_view.set_model_families(families)
 
     def _show_model_catalog_item(self, item) -> None:
         if item is None:
@@ -635,7 +532,7 @@ class MainWindow(QMainWindow):
         model_name = item.data(Qt.ItemDataRole.UserRole)
         self.train_model_edit.setText(model_name)
         self.tabs.setCurrentIndex(self._task_tab_index())
-        self.desktop_task_combo.setCurrentText("模型训练")
+        self.task_launcher_view.select_task("模型训练")
         self._set_status("就绪", f"已应用到模型训练: {model_name}")
 
     def _apply_model_to_infer(self) -> None:
@@ -698,191 +595,6 @@ class MainWindow(QMainWindow):
         root.addWidget(splitter)
         return page
 
-    def _build_tasks_tab(self) -> QWidget:
-        task_group = QGroupBox("选择任务")
-        task_form = QFormLayout(task_group)
-        task_form.addRow("任务类型", self.desktop_task_combo)
-
-        self.task_stack.addWidget(
-            _form_page(
-                "导入数据集参数",
-                [
-                    ("数据集名称", self.import_dataset_edit),
-                    ("数据 zip", _with_buttons(self.import_zip_edit, [("选择 zip", self._browse_import_zip)])),
-                    ("标注格式", self.import_format_combo),
-                    ("", self.import_overwrite_check),
-                    ("追加参数", self.import_extra_args_edit),
-                ],
-            )
-        )
-        self.task_stack.addWidget(
-            _form_page(
-                "数据转换参数",
-                [
-                    ("数据集名称", self.transform_dataset_edit),
-                    ("标注格式", self.transform_format_combo),
-                    ("任务类型", self.transform_task_combo),
-                    ("追加参数", self.transform_extra_args_edit),
-                ],
-            )
-        )
-        self.task_stack.addWidget(
-            _form_page(
-                "数据质检参数",
-                [
-                    ("数据集名称", self.validate_dataset_edit),
-                    ("任务类型", self.validate_task_combo),
-                    ("执行人", self.validate_executor_edit),
-                    ("追加参数", self.validate_extra_args_edit),
-                ],
-            )
-        )
-        self.task_stack.addWidget(
-            _form_page(
-                "模型评估参数",
-                [
-                    ("模型权重", _with_buttons(self.eval_model_edit, [("选择权重", self._browse_eval_model)])),
-                    ("数据集名称", self.eval_dataset_edit),
-                    ("评估配置", self.eval_config_edit),
-                    ("设备", self.eval_device_edit),
-                    ("执行人", self.eval_executor_edit),
-                    ("运行名", self.eval_name_edit),
-                    ("追加参数", self.eval_extra_args_edit),
-                ],
-            )
-        )
-        self.task_stack.addWidget(
-            _form_page(
-                "模型训练参数",
-                [
-                    ("模型权重/名称", _with_buttons(self.train_model_edit, [("选择权重", self._browse_train_model)])),
-                    ("数据集名称", self.train_dataset_edit),
-                    ("训练配置", self.train_config_edit),
-                    ("设备", self.train_device_edit),
-                    ("执行人", self.train_executor_edit),
-                    ("运行名", self.train_name_edit),
-                    ("epochs", self.train_epochs_spin),
-                    ("batch", self.train_batch_spin),
-                    ("workers", self.train_workers_spin),
-                    ("", self.train_dry_run_check),
-                    ("追加参数", self.train_extra_args_edit),
-                ],
-            )
-        )
-        self.task_stack.addWidget(
-            _form_page(
-                "项目重置参数",
-                [
-                    ("", self.reset_dry_run_check),
-                    ("", self.reset_backup_check),
-                    ("", self.reset_yes_check),
-                    ("", self.reset_force_check),
-                    ("追加参数", self.reset_extra_args_edit),
-                ],
-            )
-        )
-        self.task_stack.addWidget(
-            _form_page(
-                "训练曲线生成参数",
-                [
-                    ("results.csv", _with_buttons(self.plot_csv_edit, [("选择 CSV", self._browse_plot_csv)])),
-                    ("输出图片", _with_buttons(self.plot_output_edit, [("选择 PNG", self._browse_plot_output)])),
-                    ("摘要 JSON", _with_buttons(self.plot_summary_edit, [("选择 JSON", self._browse_plot_summary)])),
-                    ("", self.plot_matplotx_check),
-                    ("追加参数", self.plot_extra_args_edit),
-                ],
-            )
-        )
-        self.task_stack.addWidget(
-            _form_page(
-                "列出模型参数",
-                [
-                    ("模型系列", self.list_models_family_combo),
-                    ("推荐描述", self.list_models_recommend_edit),
-                    ("数量上限", self.list_models_limit_spin),
-                    ("", self.list_models_json_check),
-                    ("追加参数", self.list_models_extra_args_edit),
-                ],
-            )
-        )
-        self.task_stack.addWidget(
-            _form_page(
-                "数据标注参数",
-                [
-                    ("数据集名称", self.annotate_dataset_edit),
-                    ("类别列表", self.annotate_classes_edit),
-                    ("", self.annotate_resume_check),
-                    ("追加参数", self.annotate_extra_args_edit),
-                ],
-            )
-        )
-        self.task_stack.addWidget(
-            _form_page(
-                "自动标注参数（VLM）",
-                [
-                    ("数据集名称", self.auto_annotate_dataset_edit),
-                    ("类别列表", self.auto_annotate_classes_edit),
-                    ("标注指令", self.auto_annotate_prompt_edit),
-                    ("API 地址", self.auto_annotate_base_url_edit),
-                    ("视觉模型", self.auto_annotate_model_edit),
-                    ("API 密钥", self.auto_annotate_api_key_edit),
-                    ("数量上限", self.auto_annotate_limit_spin),
-                    ("", self.auto_annotate_dry_run_check),
-                    ("追加参数", self.auto_annotate_extra_args_edit),
-                ],
-            )
-        )
-        self.task_stack.addWidget(
-            _form_page(
-                "AI 任务参数",
-                [
-                    ("自然语言任务", self.ai_task_prompt_edit),
-                    ("API 地址", self.ai_task_base_url_edit),
-                    ("模型名", self.ai_task_model_edit),
-                    ("API 密钥", self.ai_task_api_key_edit),
-                    ("追加参数", self.ai_task_extra_args_edit),
-                ],
-            )
-        )
-
-        controls = QHBoxLayout()
-        controls.addWidget(self.task_start_button)
-        controls.addWidget(self.task_stop_button)
-        controls.addStretch(1)
-
-        left = QVBoxLayout()
-        title = QLabel("任务启动")
-        title.setObjectName("SectionTitle")
-        hint = QLabel("从桌面端调用现有 CLI。训练默认 dry-run，避免误触发长时间任务。")
-        hint.setObjectName("HintText")
-        left.addWidget(title)
-        left.addWidget(hint)
-        left.addWidget(task_group)
-        left.addWidget(self.task_stack)
-        left.addLayout(controls)
-        left.addWidget(QLabel("命令预览"))
-        left.addWidget(self.task_command_preview)
-        left.addStretch(1)
-
-        right = QVBoxLayout()
-        output_title = QLabel("任务输出")
-        output_title.setObjectName("SectionTitle")
-        right.addWidget(output_title)
-        right.addWidget(self.task_output)
-
-        splitter = QSplitter(Qt.Orientation.Horizontal)
-        left_container = QWidget()
-        left_container.setLayout(left)
-        right_container = QWidget()
-        right_container.setLayout(right)
-        splitter.addWidget(left_container)
-        splitter.addWidget(right_container)
-        splitter.setSizes([480, 780])
-
-        page = QWidget()
-        root = QHBoxLayout(page)
-        root.addWidget(splitter)
-        return page
 
     def _connect_signals(self) -> None:
         self.start_button.clicked.connect(self._start_worker)
@@ -901,92 +613,14 @@ class MainWindow(QMainWindow):
         self.eval_filter_edit.textChanged.connect(lambda _text: self._refresh_evaluation_results())
         self.validation_filter_edit.textChanged.connect(lambda _text: self._refresh_validation_reports())
         self.training_filter_edit.textChanged.connect(lambda _text: self._refresh_training_results())
-        self.desktop_task_combo.currentIndexChanged.connect(self._switch_task_page)
-        self.desktop_task_combo.currentTextChanged.connect(lambda _text: self._refresh_task_preview())
-        for line_edit in (
-            self.import_dataset_edit,
-            self.import_zip_edit,
-            self.import_extra_args_edit,
-            self.transform_dataset_edit,
-            self.transform_extra_args_edit,
-            self.validate_dataset_edit,
-            self.validate_executor_edit,
-            self.validate_extra_args_edit,
-            self.eval_model_edit,
-            self.eval_dataset_edit,
-            self.eval_config_edit,
-            self.eval_device_edit,
-            self.eval_executor_edit,
-            self.eval_name_edit,
-            self.eval_extra_args_edit,
-            self.train_model_edit,
-            self.train_dataset_edit,
-            self.train_config_edit,
-            self.train_device_edit,
-            self.train_executor_edit,
-            self.train_name_edit,
-            self.train_extra_args_edit,
-            self.reset_extra_args_edit,
-            self.plot_csv_edit,
-            self.plot_output_edit,
-            self.plot_summary_edit,
-            self.plot_extra_args_edit,
-            self.list_models_recommend_edit,
-            self.list_models_extra_args_edit,
-            self.annotate_dataset_edit,
-            self.annotate_classes_edit,
-            self.annotate_extra_args_edit,
-            self.auto_annotate_dataset_edit,
-            self.auto_annotate_classes_edit,
-            self.auto_annotate_prompt_edit,
-            self.auto_annotate_base_url_edit,
-            self.auto_annotate_model_edit,
-            self.auto_annotate_api_key_edit,
-            self.auto_annotate_extra_args_edit,
-            self.ai_task_prompt_edit,
-            self.ai_task_base_url_edit,
-            self.ai_task_model_edit,
-            self.ai_task_api_key_edit,
-            self.ai_task_extra_args_edit,
-        ):
-            line_edit.textChanged.connect(lambda _text: self._refresh_task_preview())
-        for combo_box in (
-            self.import_format_combo,
-            self.transform_format_combo,
-            self.transform_task_combo,
-            self.validate_task_combo,
-            self.list_models_family_combo,
-        ):
-            combo_box.currentTextChanged.connect(lambda _text: self._refresh_task_preview())
-        for spin_box in (
-            self.train_epochs_spin,
-            self.train_batch_spin,
-            self.train_workers_spin,
-            self.list_models_limit_spin,
-            self.auto_annotate_limit_spin,
-        ):
-            spin_box.valueChanged.connect(lambda _value: self._refresh_task_preview())
-        self.import_overwrite_check.stateChanged.connect(lambda _value: self._refresh_task_preview())
-        self.train_dry_run_check.stateChanged.connect(lambda _value: self._refresh_task_preview())
-        self.list_models_json_check.stateChanged.connect(lambda _value: self._refresh_task_preview())
-        self.annotate_resume_check.stateChanged.connect(lambda _value: self._refresh_task_preview())
-        self.auto_annotate_dry_run_check.stateChanged.connect(lambda _value: self._refresh_task_preview())
-        for check_box in (
-            self.reset_dry_run_check,
-            self.reset_yes_check,
-            self.reset_force_check,
-            self.reset_backup_check,
-            self.plot_matplotx_check,
-        ):
-            check_box.stateChanged.connect(lambda _value: self._refresh_task_preview())
-        self.task_start_button.clicked.connect(self._start_task)
-        self.task_stop_button.clicked.connect(self._stop_task)
+        # 任务启动页（TaskLauncherView）跨视图连接
+        self.task_launcher_view.status_changed.connect(self._set_status)
+        self.task_launcher_view.task_finished.connect(self._refresh_all_result_tabs)
+        self.task_launcher_view.agent_config_changed.connect(self._apply_task_config_to_view)
         # AI 助手页与 AI 任务页共享 API 配置（双向同步，防重复填写）
         self._sync_agent_config_fields()
         # AI 助手状态转发到主窗口状态栏
         self.agent_view.status_changed.connect(self._set_status)
-        self._switch_task_page(self.desktop_task_combo.currentIndex())
-        self._refresh_task_preview()
         self._refresh_model_catalog()
 
     @Slot()
@@ -1120,223 +754,11 @@ class MainWindow(QMainWindow):
         self.stop_button.setEnabled(False)
         self._refresh_all_result_tabs()
 
-    def _switch_task_page(self, index: int) -> None:
-        self.task_stack.setCurrentIndex(max(0, index))
-
-    @Slot()
-    def _start_task(self) -> None:
-        if self._task_thread is not None:
-            return
-        try:
-            module, args = self._build_task_command()
-        except ValueError as exc:
-            self.task_output.append(f"参数错误: {exc}")
-            self._set_status("失败", str(exc))
-            return
-
-        self.task_output.clear()
-        self.task_output.append("启动桌面端任务")
-        self._task_thread = QThread(self)
-        self._task_worker = CommandWorker(module=module, args=args, cwd=ROOT_DIR, platform_src=PLATFORM_SRC)
-        self._task_worker.moveToThread(self._task_thread)
-        self._task_thread.started.connect(self._task_worker.run)
-        self._task_worker.output_ready.connect(self.task_output.append)
-        self._task_worker.completed.connect(self._finish_task)
-        self._task_worker.failed.connect(self._fail_task)
-        self._task_worker.completed.connect(self._task_thread.quit)
-        self._task_worker.failed.connect(self._task_thread.quit)
-        self._task_thread.finished.connect(self._cleanup_task_thread)
-        self.task_start_button.setEnabled(False)
-        self.task_stop_button.setEnabled(True)
-        self._set_status("运行中", f"任务启动: {self.desktop_task_combo.currentText()}")
-        self._task_thread.start()
-
-    @Slot()
-    def _stop_task(self) -> None:
-        if self._task_worker is not None:
-            self._task_worker.cancel()
-            self._set_status("停止中", "正在停止桌面端任务")
-
-    @Slot(int)
-    def _finish_task(self, exit_code: int) -> None:
-        self.task_output.append(f"任务结束，退出码: {exit_code}")
-        if exit_code == 0:
-            self._set_status("完成", "桌面端任务完成")
-        else:
-            self._set_status("失败", f"桌面端任务退出码 {exit_code}")
-
-    @Slot(str)
-    def _fail_task(self, message: str) -> None:
-        self.task_output.append(f"任务失败: {message}")
-        self._set_status("失败", message)
-
-    @Slot()
-    def _cleanup_task_thread(self) -> None:
-        if self._task_worker is not None:
-            self._task_worker.deleteLater()
-        if self._task_thread is not None:
-            self._task_thread.deleteLater()
-        self._task_worker = None
-        self._task_thread = None
-        self.task_start_button.setEnabled(True)
-        self.task_stop_button.setEnabled(False)
-        self._refresh_all_result_tabs()
-
-    def _sync_agent_config_fields(self) -> None:
-        """AI 助手页（AgentChatView）与 AI 任务页的 API 配置双向同步。"""
-        self._syncing_agent_config = False
-        view = self.agent_view
-
-        # view → 任务页
-        view.config_changed.connect(self._apply_view_config_to_task_page)
-        # 任务页 → view
-        for source, target in (
-            (self.ai_task_base_url_edit, view.base_url_edit),
-            (self.ai_task_model_edit, view.model_edit),
-            (self.ai_task_api_key_edit, view.api_key_edit),
-        ):
-            source.textChanged.connect(lambda text, t=target: self._sync_task_config_to_view(t, text))
-
-    @Slot(str, str, str)
-    def _apply_view_config_to_task_page(self, base_url: str, model: str, api_key: str) -> None:
-        if self._syncing_agent_config:
-            return
-        self._syncing_agent_config = True
-        self.ai_task_base_url_edit.setText(base_url)
-        self.ai_task_model_edit.setText(model)
-        self.ai_task_api_key_edit.setText(api_key)
-        self._syncing_agent_config = False
-
-    def _sync_task_config_to_view(self, target, text: str) -> None:
-        if self._syncing_agent_config:
-            return
-        self._syncing_agent_config = True
-        target.setText(text)
-        self._syncing_agent_config = False
-
-    def _refresh_task_preview(self) -> None:
-        try:
-            module, args = self._build_task_command()
-            command = " ".join([sys.executable, "-m", module, *args])
-            # 密钥脱敏：避免命令预览/截图泄露 API Key
-            for secret in (self.auto_annotate_api_key_edit.text(), self.ai_task_api_key_edit.text()):
-                if secret:
-                    command = command.replace(secret, "***")
-        except ValueError as exc:
-            command = f"参数待补全: {exc}"
-        self.task_command_preview.setPlainText(command)
-
-    def _build_task_command(self) -> tuple[str, list[str]]:
-        """收集任务参数并委托 task_builder 构造 CLI 命令（纯函数可单测）。"""
-        return task_builder.build_task_command(
-            self.desktop_task_combo.currentText(),
-            self._collect_task_params(),
-        )
-
-    def _collect_task_params(self) -> dict:
-        """按当前任务收集控件值 → task_builder 参数字典。"""
-        task_name = self.desktop_task_combo.currentText()
-
-        if task_name == "导入数据集":
-            return {
-                "zip_path": self.import_zip_edit.text().strip(),
-                "dataset": self.import_dataset_edit.text().strip(),
-                "format": self.import_format_combo.currentText(),
-                "overwrite": self.import_overwrite_check.isChecked(),
-                "extra_args": _split_extra_args(self.import_extra_args_edit.text().strip()),
-            }
-        if task_name == "数据转换":
-            return {
-                "dataset": self.transform_dataset_edit.text().strip(),
-                "format": self.transform_format_combo.currentText(),
-                "task": self.transform_task_combo.currentText(),
-                "extra_args": _split_extra_args(self.transform_extra_args_edit.text().strip()),
-            }
-        if task_name == "数据质检":
-            return {
-                "dataset": self.validate_dataset_edit.text().strip(),
-                "task": self.validate_task_combo.currentText(),
-                "executor": self.validate_executor_edit.text().strip(),
-                "extra_args": _split_extra_args(self.validate_extra_args_edit.text().strip()),
-            }
-        if task_name == "模型评估":
-            return {
-                "model": self.eval_model_edit.text().strip(),
-                "dataset": self.eval_dataset_edit.text().strip(),
-                "config": self.eval_config_edit.text().strip(),
-                "device": self.eval_device_edit.text().strip(),
-                "executor": self.eval_executor_edit.text().strip(),
-                "name": self.eval_name_edit.text().strip(),
-                "extra_args": _split_extra_args(self.eval_extra_args_edit.text().strip()),
-            }
-        if task_name == "模型训练":
-            return {
-                "model": self.train_model_edit.text().strip(),
-                "dataset": self.train_dataset_edit.text().strip(),
-                "config": self.train_config_edit.text().strip(),
-                "device": self.train_device_edit.text().strip(),
-                "executor": self.train_executor_edit.text().strip(),
-                "name": self.train_name_edit.text().strip(),
-                "epochs": self.train_epochs_spin.value(),
-                "batch": self.train_batch_spin.value(),
-                "workers": self.train_workers_spin.value(),
-                "dry_run": self.train_dry_run_check.isChecked(),
-                "extra_args": _split_extra_args(self.train_extra_args_edit.text().strip()),
-            }
-        if task_name == "项目重置":
-            return {
-                "dry_run": self.reset_dry_run_check.isChecked(),
-                "backup": self.reset_backup_check.isChecked(),
-                "yes": self.reset_yes_check.isChecked(),
-                "force": self.reset_force_check.isChecked(),
-                "extra_args": _split_extra_args(self.reset_extra_args_edit.text().strip()),
-            }
-        if task_name == "训练曲线生成":
-            return {
-                "csv_path": self.plot_csv_edit.text().strip(),
-                "output": self.plot_output_edit.text().strip(),
-                "summary": self.plot_summary_edit.text().strip(),
-                "matplotx": self.plot_matplotx_check.isChecked(),
-                "extra_args": _split_extra_args(self.plot_extra_args_edit.text().strip()),
-            }
-        if task_name == "列出模型":
-            family = self.list_models_family_combo.currentText()
-            return {
-                "family": None if family == "全部" else family,
-                "recommend": self.list_models_recommend_edit.text().strip(),
-                "limit": self.list_models_limit_spin.value(),
-                "json": self.list_models_json_check.isChecked(),
-                "extra_args": _split_extra_args(self.list_models_extra_args_edit.text().strip()),
-            }
-        if task_name == "数据标注":
-            return {
-                "dataset": self.annotate_dataset_edit.text().strip(),
-                "classes": self.annotate_classes_edit.text().split(),
-                "resume": self.annotate_resume_check.isChecked(),
-                "extra_args": _split_extra_args(self.annotate_extra_args_edit.text().strip()),
-            }
-        if task_name == "自动标注":
-            limit = self.auto_annotate_limit_spin.value()
-            return {
-                "dataset": self.auto_annotate_dataset_edit.text().strip(),
-                "classes": self.auto_annotate_classes_edit.text().split(),
-                "prompt": self.auto_annotate_prompt_edit.text().strip(),
-                "base_url": self.auto_annotate_base_url_edit.text().strip(),
-                "model": self.auto_annotate_model_edit.text().strip(),
-                "api_key": self.auto_annotate_api_key_edit.text().strip(),
-                "limit": limit or None,
-                "dry_run": self.auto_annotate_dry_run_check.isChecked(),
-                "extra_args": _split_extra_args(self.auto_annotate_extra_args_edit.text().strip()),
-            }
-        if task_name == "AI 任务":
-            return {
-                "prompt": self.ai_task_prompt_edit.text().strip(),
-                "base_url": self.ai_task_base_url_edit.text().strip(),
-                "model": self.ai_task_model_edit.text().strip(),
-                "api_key": self.ai_task_api_key_edit.text().strip(),
-                "extra_args": _split_extra_args(self.ai_task_extra_args_edit.text().strip()),
-            }
-        raise ValueError(f"未知任务: {task_name}")
+    def _task_tab_index(self) -> int:
+        for index in range(self.tabs.count()):
+            if self.tabs.tabText(index) == "任务启动":
+                return index
+        return self.tabs.count() - 1  # 兜底：最后一个 tab
 
     def _open_model_catalog(self) -> None:
         """跳转到模型目录标签页并刷新。"""
@@ -1349,46 +771,10 @@ class MainWindow(QMainWindow):
                 return index
         return 3  # 兜底：推理/评估/质检之后
 
-    def _task_tab_index(self) -> int:
-        for index in range(self.tabs.count()):
-            if self.tabs.tabText(index) == "任务启动":
-                return index
-        return self.tabs.count() - 1  # 兜底：最后一个 tab
-
     def _browse_model(self) -> None:
         path, _ = QFileDialog.getOpenFileName(self, "选择模型权重", str(ROOT_DIR), "PyTorch weights (*.pt);;All files (*)")
         if path:
             self.model_edit.setText(path)
-
-    def _browse_eval_model(self) -> None:
-        path, _ = QFileDialog.getOpenFileName(self, "选择模型权重", str(ROOT_DIR), "PyTorch weights (*.pt);;All files (*)")
-        if path:
-            self.eval_model_edit.setText(path)
-
-    def _browse_train_model(self) -> None:
-        path, _ = QFileDialog.getOpenFileName(self, "选择模型权重", str(ROOT_DIR), "PyTorch weights (*.pt);;All files (*)")
-        if path:
-            self.train_model_edit.setText(path)
-
-    def _browse_import_zip(self) -> None:
-        path, _ = QFileDialog.getOpenFileName(self, "选择数据集 zip", str(ROOT_DIR.parent), "Zip files (*.zip);;All files (*)")
-        if path:
-            self.import_zip_edit.setText(path)
-
-    def _browse_plot_csv(self) -> None:
-        path, _ = QFileDialog.getOpenFileName(self, "选择 results.csv", str(ROOT_DIR / "runs"), "CSV files (*.csv);;All files (*)")
-        if path:
-            self.plot_csv_edit.setText(path)
-
-    def _browse_plot_output(self) -> None:
-        path, _ = QFileDialog.getSaveFileName(self, "选择输出图片", str(ROOT_DIR / "runs" / "training_summary.png"), "PNG files (*.png);;All files (*)")
-        if path:
-            self.plot_output_edit.setText(path)
-
-    def _browse_plot_summary(self) -> None:
-        path, _ = QFileDialog.getSaveFileName(self, "选择摘要 JSON", str(ROOT_DIR / "runs" / "training_summary.json"), "JSON files (*.json);;All files (*)")
-        if path:
-            self.plot_summary_edit.setText(path)
 
     def _browse_media_source(self) -> None:
         path, _ = QFileDialog.getOpenFileName(

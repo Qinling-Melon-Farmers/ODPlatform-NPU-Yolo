@@ -8,11 +8,11 @@ if str(DESKTOP_DIR) not in sys.path:
     sys.path.insert(0, str(DESKTOP_DIR))
 
 from agent_worker import AgentWorker  # noqa: E402
-from PySide6.QtCore import QCoreApplication  # noqa: E402
+from PySide6.QtWidgets import QApplication  # noqa: E402
 
 from od_platform.agent.orchestrator import AgentEvent  # noqa: E402
 
-_app = QCoreApplication.instance() or QCoreApplication([])
+_app = QApplication.instance() or QApplication([])
 
 
 class FakeOrchestrator:
