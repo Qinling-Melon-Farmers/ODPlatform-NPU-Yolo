@@ -18,6 +18,8 @@ _app = QCoreApplication.instance() or QCoreApplication([])
 class FakeOrchestrator:
     """按预设事件序列返回的假编排器。"""
 
+    session = None  # 与真实 AgentOrchestrator 对齐
+
     def __init__(self, events: list[AgentEvent]) -> None:
         self.events = events
 
