@@ -49,6 +49,7 @@ except ImportError as exc:  # pragma: no cover - optional desktop dependencies.
     )
     raise SystemExit(2) from exc
 
+import task_builder  # noqa: E402
 from infer_worker import InferWorker  # noqa: E402
 from task_worker import CommandWorker  # noqa: E402
 
@@ -142,21 +143,7 @@ class MainWindow(QMainWindow):
         self.next_plot_button = QPushButton("下一张图")
 
         self.desktop_task_combo = QComboBox()
-        self.desktop_task_combo.addItems(
-            [
-                "导入数据集",
-                "数据转换",
-                "数据质检",
-                "模型评估",
-                "模型训练",
-                "项目重置",
-                "训练曲线生成",
-                "列出模型",
-                "数据标注",
-                "自动标注",
-                "AI 任务",
-            ]
-        )
+        self.desktop_task_combo.addItems(list(task_builder.TASK_NAMES))
         self.task_stack = QStackedWidget()
 
         self.model_catalog_list = QListWidget()
@@ -1227,204 +1214,115 @@ class MainWindow(QMainWindow):
         self.task_command_preview.setPlainText(command)
 
     def _build_task_command(self) -> tuple[str, list[str]]:
+        """收集任务参数并委托 task_builder 构造 CLI 命令（纯函数可单测）。"""
+        return task_builder.build_task_command(
+            self.desktop_task_combo.currentText(),
+            self._collect_task_params(),
+        )
+
+    def _collect_task_params(self) -> dict:
+        """按当前任务收集控件值 → task_builder 参数字典。"""
         task_name = self.desktop_task_combo.currentText()
 
         if task_name == "导入数据集":
-            dataset = self.import_dataset_edit.text().strip()
-            zip_path = self.import_zip_edit.text().strip()
-            extra_args = _split_extra_args(self.import_extra_args_edit.text().strip())
-            if not zip_path:
-                raise ValueError("导入数据集需要填写数据 zip")
-            args = [zip_path]
-            if dataset:
-                args.extend(["--name", dataset])
-            args.extend(["--format", self.import_format_combo.currentText()])
-            if self.import_overwrite_check.isChecked():
-                args.append("--overwrite")
-            return "od_platform.cli.import_dataset", [*args, *extra_args]
-
+            return {
+                "zip_path": self.import_zip_edit.text().strip(),
+                "dataset": self.import_dataset_edit.text().strip(),
+                "format": self.import_format_combo.currentText(),
+                "overwrite": self.import_overwrite_check.isChecked(),
+                "extra_args": _split_extra_args(self.import_extra_args_edit.text().strip()),
+            }
         if task_name == "数据转换":
-            dataset = self.transform_dataset_edit.text().strip()
-            extra_args = _split_extra_args(self.transform_extra_args_edit.text().strip())
-            if not dataset:
-                raise ValueError("数据转换需要填写数据集名称")
-            annotation_format = self.transform_format_combo.currentText()
-            if annotation_format == "voc":
-                annotation_format = "pascal_voc"
-            args = [
-                "--dataset",
-                dataset,
-                "--format",
-                annotation_format,
-                "--task",
-                self.transform_task_combo.currentText(),
-            ]
-            return "od_platform.cli.transform_data", [*args, *extra_args]
-
+            return {
+                "dataset": self.transform_dataset_edit.text().strip(),
+                "format": self.transform_format_combo.currentText(),
+                "task": self.transform_task_combo.currentText(),
+                "extra_args": _split_extra_args(self.transform_extra_args_edit.text().strip()),
+            }
         if task_name == "数据质检":
-            dataset = self.validate_dataset_edit.text().strip()
-            executor = self.validate_executor_edit.text().strip()
-            extra_args = _split_extra_args(self.validate_extra_args_edit.text().strip())
-            if not dataset:
-                raise ValueError("数据质检需要填写数据集名称")
-            args = ["--dataset", dataset, "--task", self.validate_task_combo.currentText()]
-            if executor:
-                args.extend(["--executor", executor])
-            return "od_platform.cli.validate_data", [*args, *extra_args]
-
+            return {
+                "dataset": self.validate_dataset_edit.text().strip(),
+                "task": self.validate_task_combo.currentText(),
+                "executor": self.validate_executor_edit.text().strip(),
+                "extra_args": _split_extra_args(self.validate_extra_args_edit.text().strip()),
+            }
         if task_name == "模型评估":
-            model = self.eval_model_edit.text().strip()
-            dataset = self.eval_dataset_edit.text().strip()
-            device = self.eval_device_edit.text().strip()
-            executor = self.eval_executor_edit.text().strip()
-            run_name = self.eval_name_edit.text().strip()
-            extra_args = _split_extra_args(self.eval_extra_args_edit.text().strip())
-            if not model:
-                raise ValueError("模型评估需要填写模型权重")
-            if not dataset:
-                raise ValueError("模型评估需要填写数据集名称")
-            args = ["--config", self.eval_config_edit.text().strip() or "val", "--model", model, "--data", dataset]
-            if device:
-                args.extend(["--device", device])
-            if executor:
-                args.extend(["--executor", executor])
-            if run_name:
-                args.extend(["--name", run_name])
-            return "od_platform.cli.evaluate_model", [*args, *extra_args]
-
+            return {
+                "model": self.eval_model_edit.text().strip(),
+                "dataset": self.eval_dataset_edit.text().strip(),
+                "config": self.eval_config_edit.text().strip(),
+                "device": self.eval_device_edit.text().strip(),
+                "executor": self.eval_executor_edit.text().strip(),
+                "name": self.eval_name_edit.text().strip(),
+                "extra_args": _split_extra_args(self.eval_extra_args_edit.text().strip()),
+            }
         if task_name == "模型训练":
-            model = self.train_model_edit.text().strip()
-            dataset = self.train_dataset_edit.text().strip()
-            device = self.train_device_edit.text().strip()
-            executor = self.train_executor_edit.text().strip()
-            run_name = self.train_name_edit.text().strip()
-            extra_args = _split_extra_args(self.train_extra_args_edit.text().strip())
-            if not model:
-                raise ValueError("模型训练需要填写模型权重或模型名")
-            if not dataset:
-                raise ValueError("模型训练需要填写数据集名称")
-            args = [
-                "--config",
-                self.train_config_edit.text().strip() or "train",
-                "--model",
-                model,
-                "--data",
-                dataset,
-                "--epochs",
-                str(self.train_epochs_spin.value()),
-                "--batch",
-                str(self.train_batch_spin.value()),
-                "--workers",
-                str(self.train_workers_spin.value()),
-            ]
-            if device:
-                args.extend(["--device", device])
-            if executor:
-                args.extend(["--executor", executor])
-            if run_name:
-                args.extend(["--name", run_name])
-            if self.train_dry_run_check.isChecked():
-                args.append("--dry-run")
-            return "od_platform.cli.train_model", [*args, *extra_args]
-
+            return {
+                "model": self.train_model_edit.text().strip(),
+                "dataset": self.train_dataset_edit.text().strip(),
+                "config": self.train_config_edit.text().strip(),
+                "device": self.train_device_edit.text().strip(),
+                "executor": self.train_executor_edit.text().strip(),
+                "name": self.train_name_edit.text().strip(),
+                "epochs": self.train_epochs_spin.value(),
+                "batch": self.train_batch_spin.value(),
+                "workers": self.train_workers_spin.value(),
+                "dry_run": self.train_dry_run_check.isChecked(),
+                "extra_args": _split_extra_args(self.train_extra_args_edit.text().strip()),
+            }
         if task_name == "项目重置":
-            args: list[str] = []
-            extra_args = _split_extra_args(self.reset_extra_args_edit.text().strip())
-            if self.reset_dry_run_check.isChecked():
-                args.append("--dry-run")
-            if self.reset_backup_check.isChecked():
-                args.append("--backup")
-            if self.reset_yes_check.isChecked():
-                args.append("--yes")
-            if self.reset_force_check.isChecked():
-                args.append("--force")
-            return "od_platform.cli.reset_project", [*args, *extra_args]
-
+            return {
+                "dry_run": self.reset_dry_run_check.isChecked(),
+                "backup": self.reset_backup_check.isChecked(),
+                "yes": self.reset_yes_check.isChecked(),
+                "force": self.reset_force_check.isChecked(),
+                "extra_args": _split_extra_args(self.reset_extra_args_edit.text().strip()),
+            }
         if task_name == "训练曲线生成":
-            csv_path = self.plot_csv_edit.text().strip()
-            output_path = self.plot_output_edit.text().strip()
-            summary_path = self.plot_summary_edit.text().strip()
-            extra_args = _split_extra_args(self.plot_extra_args_edit.text().strip())
-            if not csv_path:
-                raise ValueError("训练曲线生成需要填写 results.csv")
-            args = [csv_path]
-            if output_path:
-                args.extend(["--output", output_path])
-            if summary_path:
-                args.extend(["--summary", summary_path])
-            if self.plot_matplotx_check.isChecked():
-                args.append("--matplotx")
-            return "od_platform.cli.plot_training", [*args, *extra_args]
-
+            return {
+                "csv_path": self.plot_csv_edit.text().strip(),
+                "output": self.plot_output_edit.text().strip(),
+                "summary": self.plot_summary_edit.text().strip(),
+                "matplotx": self.plot_matplotx_check.isChecked(),
+                "extra_args": _split_extra_args(self.plot_extra_args_edit.text().strip()),
+            }
         if task_name == "列出模型":
-            extra_args = _split_extra_args(self.list_models_extra_args_edit.text().strip())
-            args: list[str] = []
             family = self.list_models_family_combo.currentText()
-            if family and family != "全部":
-                args.extend(["--family", family])
-            recommend = self.list_models_recommend_edit.text().strip()
-            if recommend:
-                args.extend(["--recommend", recommend])
-            args.extend(["--limit", str(self.list_models_limit_spin.value())])
-            if self.list_models_json_check.isChecked():
-                args.append("--json")
-            return "od_platform.model_catalog.cli.list_models", [*args, *extra_args]
-
+            return {
+                "family": None if family == "全部" else family,
+                "recommend": self.list_models_recommend_edit.text().strip(),
+                "limit": self.list_models_limit_spin.value(),
+                "json": self.list_models_json_check.isChecked(),
+                "extra_args": _split_extra_args(self.list_models_extra_args_edit.text().strip()),
+            }
         if task_name == "数据标注":
-            dataset = self.annotate_dataset_edit.text().strip()
-            classes = self.annotate_classes_edit.text().split()
-            extra_args = _split_extra_args(self.annotate_extra_args_edit.text().strip())
-            if not dataset:
-                raise ValueError("数据标注需要填写数据集名称")
-            if not classes:
-                raise ValueError("数据标注需要填写至少一个类别名")
-            args = ["--dataset", dataset, "--classes", *classes]
-            if self.annotate_resume_check.isChecked():
-                args.append("--resume")
-            return "od_platform.annotation.cli.annotate", [*args, *extra_args]
-
+            return {
+                "dataset": self.annotate_dataset_edit.text().strip(),
+                "classes": self.annotate_classes_edit.text().split(),
+                "resume": self.annotate_resume_check.isChecked(),
+                "extra_args": _split_extra_args(self.annotate_extra_args_edit.text().strip()),
+            }
         if task_name == "自动标注":
-            dataset = self.auto_annotate_dataset_edit.text().strip()
-            classes = self.auto_annotate_classes_edit.text().split()
-            prompt = self.auto_annotate_prompt_edit.text().strip()
-            base_url = self.auto_annotate_base_url_edit.text().strip()
-            model = self.auto_annotate_model_edit.text().strip()
-            api_key = self.auto_annotate_api_key_edit.text().strip()
-            extra_args = _split_extra_args(self.auto_annotate_extra_args_edit.text().strip())
-            if not dataset:
-                raise ValueError("自动标注需要填写数据集名称")
-            if not classes:
-                raise ValueError("自动标注需要填写至少一个类别名")
-            if not base_url:
-                raise ValueError("自动标注需要填写 API 地址")
-            if not model:
-                raise ValueError("自动标注需要填写视觉模型名")
-            args = ["--dataset", dataset, "--classes", *classes, "--prompt", prompt, "--base-url", base_url, "--model", model]
-            if api_key:
-                args.extend(["--api-key", api_key])
-            if self.auto_annotate_limit_spin.value():
-                args.extend(["--limit", str(self.auto_annotate_limit_spin.value())])
-            if self.auto_annotate_dry_run_check.isChecked():
-                args.append("--dry-run")
-            return "od_platform.annotation.cli.auto_annotate", [*args, *extra_args]
-
+            limit = self.auto_annotate_limit_spin.value()
+            return {
+                "dataset": self.auto_annotate_dataset_edit.text().strip(),
+                "classes": self.auto_annotate_classes_edit.text().split(),
+                "prompt": self.auto_annotate_prompt_edit.text().strip(),
+                "base_url": self.auto_annotate_base_url_edit.text().strip(),
+                "model": self.auto_annotate_model_edit.text().strip(),
+                "api_key": self.auto_annotate_api_key_edit.text().strip(),
+                "limit": limit or None,
+                "dry_run": self.auto_annotate_dry_run_check.isChecked(),
+                "extra_args": _split_extra_args(self.auto_annotate_extra_args_edit.text().strip()),
+            }
         if task_name == "AI 任务":
-            prompt = self.ai_task_prompt_edit.text().strip()
-            base_url = self.ai_task_base_url_edit.text().strip()
-            model = self.ai_task_model_edit.text().strip()
-            api_key = self.ai_task_api_key_edit.text().strip()
-            extra_args = _split_extra_args(self.ai_task_extra_args_edit.text().strip())
-            if not prompt:
-                raise ValueError("AI 任务需要填写自然语言任务描述")
-            if not base_url:
-                raise ValueError("AI 任务需要填写 API 地址")
-            if not model:
-                raise ValueError("AI 任务需要填写模型名")
-            args = ["--base-url", base_url, "--model", model, "--task", prompt]
-            if api_key:
-                args.extend(["--api-key", api_key])
-            return "od_platform.agent.cli.agent_chat", [*args, *extra_args]
-
+            return {
+                "prompt": self.ai_task_prompt_edit.text().strip(),
+                "base_url": self.ai_task_base_url_edit.text().strip(),
+                "model": self.ai_task_model_edit.text().strip(),
+                "api_key": self.ai_task_api_key_edit.text().strip(),
+                "extra_args": _split_extra_args(self.ai_task_extra_args_edit.text().strip()),
+            }
         raise ValueError(f"未知任务: {task_name}")
 
     def _open_model_catalog(self) -> None:
